@@ -45,11 +45,18 @@ export class RuntimeState extends EventEmitter {
     this.groupChat = {
       mode: 'OFF',
       allowlist: [],
+      blockedTerms: [],
       discovered: [],
+      fuses: [],
+      jitterMinMs: 1_000,
+      jitterMaxMs: 3_000,
       observed: 0,
       forwarded: 0,
       replied: 0,
       blocked: 0,
+      policyBlocked: 0,
+      rateLimited: 0,
+      fused: 0,
       lastMessageAt: '',
     };
     this.schedule = {

@@ -11,6 +11,7 @@ import {
   normalizeGroupAllowlist,
   normalizeGroupChatMode,
 } from './group-chat.js';
+import { normalizeBlockedTerms } from './group-safety.js';
 
 export const WECHAT_ADMIN_MODES = Object.freeze({
   RUNNING: 'RUNNING',
@@ -40,6 +41,7 @@ export class PersistentControlState {
         wechatAdminMode: WECHAT_ADMIN_MODES.RUNNING,
         groupChatMode: GROUP_CHAT_MODES.OFF,
         groupAllowlist: [],
+        groupBlockedTerms: [],
         changedAt: '',
       };
     }
@@ -48,6 +50,7 @@ export class PersistentControlState {
       wechatAdminMode: normalizeWechatAdminMode(stored?.wechatAdminMode),
       groupChatMode: normalizeGroupChatMode(stored?.groupChatMode),
       groupAllowlist: normalizeGroupAllowlist(stored?.groupAllowlist),
+      groupBlockedTerms: normalizeBlockedTerms(stored?.groupBlockedTerms),
       changedAt: String(stored?.changedAt || ''),
     };
   }
@@ -65,9 +68,10 @@ export class PersistentControlState {
     });
   }
 
-  saveGroupChatConfig(groupChatMode, groupAllowlist) {
+  saveGroupChatConfig(groupChatMode, groupAllowlist, groupBlockedTerms = []) {
     const mode = normalizeGroupChatMode(groupChatMode);
     const allowlist = normalizeGroupAllowlist(groupAllowlist);
+    const blockedTerms = normalizeBlockedTerms(groupBlockedTerms);
     if (mode !== groupChatMode) {
       throw new TypeError(`Unsupported group chat mode: ${groupChatMode}`);
     }
@@ -76,16 +80,18 @@ export class PersistentControlState {
       ...current,
       groupChatMode: mode,
       groupAllowlist: allowlist,
+      groupBlockedTerms: blockedTerms,
       changedAt: new Date(this.now()).toISOString(),
     });
   }
 
   write(values) {
     const snapshot = {
-      version: 2,
+      version: 3,
       wechatAdminMode: normalizeWechatAdminMode(values.wechatAdminMode),
       groupChatMode: normalizeGroupChatMode(values.groupChatMode),
       groupAllowlist: normalizeGroupAllowlist(values.groupAllowlist),
+      groupBlockedTerms: normalizeBlockedTerms(values.groupBlockedTerms),
       changedAt: String(values.changedAt || new Date(this.now()).toISOString()),
     };
     mkdirSync(dirname(this.path), { recursive: true });

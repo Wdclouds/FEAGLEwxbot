@@ -13,6 +13,7 @@ import {
   WECHAT_ADMIN_MODES,
 } from './control-state.js';
 import { GROUP_CHAT_MODES } from './group-chat.js';
+import { GroupSafetyGate } from './group-safety.js';
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -35,6 +36,7 @@ let savedControl = {
   wechatAdminMode: WECHAT_ADMIN_MODES.RUNNING,
   groupChatMode: GROUP_CHAT_MODES.OFF,
   groupAllowlist: [],
+  groupBlockedTerms: [],
   changedAt: '',
 };
 try {
@@ -49,6 +51,7 @@ state.patch('wechat', {
 state.patch('groupChat', {
   mode: savedControl.groupChatMode,
   allowlist: savedControl.groupAllowlist,
+  blockedTerms: savedControl.groupBlockedTerms,
 });
 const quietRange = parseQuietHours(process.env.BOT_QUIET_HOURS || '00:00-07:00');
 const timezone = process.env.BOT_TIMEZONE || 'Asia/Shanghai';
@@ -107,13 +110,25 @@ const dashboard = new DashboardServer({
     }
     return wechat.setAdminMode(mode);
   },
-  setGroupChatConfig: async (mode, allowlist) => {
-    controlStore.saveGroupChatConfig(mode, allowlist);
-    return wechat.setGroupChatConfig(mode, allowlist);
+  setGroupChatConfig: async (mode, allowlist, blockedTerms) => {
+    controlStore.saveGroupChatConfig(mode, allowlist, blockedTerms);
+    return wechat.setGroupChatConfig(mode, allowlist, blockedTerms);
   },
 });
 const idMap = new IdMap();
 idMap.pruneMessageReceipts();
+const groupSafety = new GroupSafetyGate({
+  blockedTerms: savedControl.groupBlockedTerms,
+  onChange: (fuses) => state.patch('groupChat', { fuses }),
+  onFuse: (fuse) => {
+    state.incrementGroup('fused');
+    const group = idMap.contact(fuse.groupId);
+    void notifier.sendGroupFuseAlert({
+      ...fuse,
+      groupName: group?.nickname || `群 ${fuse.groupId}`,
+    }).catch(() => {});
+  },
+});
 const astrbot = new AstrBotSupervisor({ state });
 const messageGuard = new MessageGuard({
   maxCodePoints: positiveInteger(process.env.BOT_MAX_MESSAGE_CHARS, 2_000),
@@ -140,6 +155,8 @@ wechat = new WechatClient({
   initialAdminMode: savedControl.wechatAdminMode,
   initialGroupChatMode: savedControl.groupChatMode,
   initialGroupAllowlist: savedControl.groupAllowlist,
+  initialGroupBlockedTerms: savedControl.groupBlockedTerms,
+  groupSafety,
   onPrivateText: async (message) => onebot.sendPrivateText(message),
   onGroupText: async (message) => onebot.sendGroupText(message),
 });
@@ -173,6 +190,7 @@ function shutdown(signal, exitCode = 0) {
   clearInterval(scheduleTimer);
   feishuBinding.stop();
   notifier.stop();
+  groupSafety.stop();
   onebot.stop();
   wechat.shutdown();
   astrbot.stop();

@@ -3,8 +3,14 @@ import assert from 'node:assert/strict';
 import { RuntimeState } from '../src/state.js';
 import { WechatClient } from '../src/wechat-client.js';
 import { GROUP_CHAT_MODES } from '../src/group-chat.js';
+import { GroupSafetyGate } from '../src/group-safety.js';
 
-function fixture({ mode, allowlist = [], onGroupText = async () => {} }) {
+function fixture({
+  mode,
+  allowlist = [],
+  blockedTerms = [],
+  onGroupText = async () => {},
+}) {
   const state = new RuntimeState();
   const ids = {
     group: 1_000_000_101,
@@ -27,7 +33,15 @@ function fixture({ mode, allowlist = [], onGroupText = async () => {} }) {
     onGroupText,
     initialGroupChatMode: mode,
     initialGroupAllowlist: allowlist,
+    initialGroupBlockedTerms: blockedTerms,
+    groupSafety: new GroupSafetyGate({
+      blockedTerms,
+      fuseAnomalyThreshold: 99,
+    }),
     groupReplyCooldownMs: 5_000,
+    groupJitterMinMs: 0,
+    groupJitterMaxMs: 0,
+    delay: async () => {},
   });
   client.loggedIn = true;
   client.selfId = 1_000_000_000;
@@ -122,4 +136,40 @@ test('group replies are allowlisted and protected by a per-group cooldown', asyn
   );
   now += 5_001;
   await client.sendGroupText(groupId, 'later');
+});
+
+test('local text policy blocks both inbound prompts and outbound replies', async () => {
+  let calls = 0;
+  const groupId = 1_000_000_101;
+  const { state, client } = fixture({
+    mode: GROUP_CHAT_MODES.MENTION_ONLY,
+    allowlist: [groupId],
+    blockedTerms: ['blocked phrase'],
+    onGroupText: async () => { calls += 1; },
+  });
+
+  await client.handleMessage(groupMessage('@Bot\u2005contains blocked phrase'));
+  assert.equal(calls, 0);
+  assert.equal(state.messages[0].status, 'GROUP-POLICY-BLOCKED');
+  await assert.rejects(
+    client.sendGroupText(groupId, 'model says blocked phrase'),
+    (error) => error.code === 'GROUP-POLICY-BLOCKED',
+  );
+});
+
+test('group replies use configurable jitter before sending', async () => {
+  const groupId = 1_000_000_101;
+  const delays = [];
+  const { client } = fixture({
+    mode: GROUP_CHAT_MODES.MENTION_ONLY,
+    allowlist: [groupId],
+  });
+  client.groupJitterMinMs = 1_000;
+  client.groupJitterMaxMs = 3_000;
+  client.random = () => 0.5;
+  client.delay = async (milliseconds) => delays.push(milliseconds);
+
+  await client.sendGroupText(groupId, 'reply');
+
+  assert.deepEqual(delays, [2_000]);
 });

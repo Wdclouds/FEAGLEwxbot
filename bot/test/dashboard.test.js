@@ -187,9 +187,9 @@ test('dashboard group reply mode is fail-closed and requires confirmation', asyn
     state,
     host: '127.0.0.1',
     port: 0,
-    async setGroupChatConfig(mode, allowlist) {
-      calls.push({ mode, allowlist });
-      state.patch('groupChat', { mode, allowlist });
+    async setGroupChatConfig(mode, allowlist, blockedTerms) {
+      calls.push({ mode, allowlist, blockedTerms });
+      state.patch('groupChat', { mode, allowlist, blockedTerms });
       return state.snapshot();
     },
   });
@@ -212,6 +212,7 @@ test('dashboard group reply mode is fail-closed and requires confirmation', asyn
     body: JSON.stringify({
       mode: 'MENTION_ONLY',
       allowlist: ['1001', 'bad', 1002],
+      blockedTerms: [' Risk ', 'risk'],
       confirm: 'ENABLE_GROUP_REPLY',
     }),
   });
@@ -219,5 +220,6 @@ test('dashboard group reply mode is fail-closed and requires confirmation', asyn
   assert.deepEqual(calls, [{
     mode: 'MENTION_ONLY',
     allowlist: ['1001', '1002'],
+    blockedTerms: ['risk'],
   }]);
 });

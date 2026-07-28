@@ -61,6 +61,10 @@ const messageStatusLabels = {
   'GROUP-EMPTY-MENTION': '空 @ / EMPTY MENTION',
   'GROUP-MENTION': '群聊 @ / GROUP MENTION',
   'GROUP-SENT': '群聊已发送 / GROUP SENT',
+  'GROUP-POLICY-BLOCKED': '本地策略拦截 / POLICY BLOCKED',
+  'GROUP-MEMBER-RATE-LIMITED': '成员限流 / MEMBER RATE',
+  'GROUP-RATE-LIMITED': '群聊限流 / GROUP RATE',
+  'GROUP-FUSED': '群聊熔断 / GROUP FUSED',
 };
 
 function bilingualStatus(value) {
@@ -147,6 +151,14 @@ function allowlistFromInput() {
     .filter((item) => /^\d+$/.test(item))));
 }
 
+function blockedTermsFromInput() {
+  return Array.from(new Set($('group-blocked-terms').value
+    .split(/\r?\n/)
+    .map((item) => item.trim().toLocaleLowerCase())
+    .filter(Boolean)))
+    .slice(0, 100);
+}
+
 function renderGroupChat(state) {
   const groupChat = state.groupChat || {
     mode: 'OFF',
@@ -160,10 +172,24 @@ function renderGroupChat(state) {
   if (document.activeElement !== $('group-allowlist')) {
     $('group-allowlist').value = (groupChat.allowlist || []).join(', ');
   }
+  if (document.activeElement !== $('group-blocked-terms')) {
+    $('group-blocked-terms').value = (groupChat.blockedTerms || []).join('\n');
+  }
   $('group-observed').textContent = groupChat.observed || 0;
   $('group-forwarded').textContent = groupChat.forwarded || 0;
   $('group-replied').textContent = groupChat.replied || 0;
   $('group-blocked').textContent = groupChat.blocked || 0;
+  $('group-policy-blocked').textContent = groupChat.policyBlocked || 0;
+  $('group-rate-limited').textContent = groupChat.rateLimited || 0;
+  $('group-fused').textContent = groupChat.fused || 0;
+  const fuses = groupChat.fuses || [];
+  const fuseStatus = $('group-fuse-status');
+  fuseStatus.classList.toggle('active', fuses.length > 0);
+  fuseStatus.textContent = fuses.length
+    ? fuses.map((fuse) => (
+      `群 ${fuse.groupId} · ${fuse.reason} · 至 / UNTIL ${time(fuse.untilAt)}`
+    )).join(' | ')
+    : '没有群聊熔断 / NO ACTIVE FUSES';
 
   const discovered = groupChat.discovered || [];
   if (!discovered.length) {
@@ -397,6 +423,7 @@ $('group-config-save').addEventListener('click', async () => {
   const hint = $('group-config-hint');
   const mode = $('group-mode').value;
   const allowlist = allowlistFromInput();
+  const blockedTerms = blockedTermsFromInput();
   if (
     mode === 'MENTION_ONLY'
     && !window.confirm(
@@ -412,6 +439,7 @@ $('group-config-save').addEventListener('click', async () => {
       body: JSON.stringify({
         mode,
         allowlist,
+        blockedTerms,
         confirm: mode === 'MENTION_ONLY' ? 'ENABLE_GROUP_REPLY' : undefined,
       }),
     });

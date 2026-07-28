@@ -276,6 +276,21 @@ export class FeishuNotifier {
     });
   }
 
+  async sendGroupFuseAlert({
+    groupId,
+    groupName = '微信群',
+    reason = 'PIPELINE_FAILURE',
+    untilAt = '',
+  }) {
+    if (!this.enabled) return this.state.snapshot();
+    const reasonText = reason === 'RATE_ANOMALY'
+      ? '短时间频率异常'
+      : '连续处理或发送失败';
+    return this.enqueue('GROUP_FUSE', () => this.sendText(
+      `🧯 Feagle WxBot 群聊自动熔断\n群聊：${groupName}（${groupId}）\n原因：${reasonText}\n暂停回复至：${untilAt || '冷却结束'}\n微信私聊与其他群不受影响。`,
+    ));
+  }
+
   beginReloginTest() {
     if (!this.enabled) {
       throw new Error('Feishu notification configuration is incomplete');

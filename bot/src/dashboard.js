@@ -324,6 +324,16 @@ export class DashboardServer {
         const allowlist = Array.from(new Set(payload.allowlist
           .map((item) => String(item || '').trim())
           .filter((item) => /^\d+$/.test(item))));
+        if (payload.blockedTerms !== undefined && !Array.isArray(payload.blockedTerms)) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'blockedTerms must be an array' }));
+          return;
+        }
+        const blockedTerms = Array.from(new Set((payload.blockedTerms || [])
+          .map((item) => String(item || '').trim().toLocaleLowerCase())
+          .filter(Boolean)
+          .map((item) => item.slice(0, 64))))
+          .slice(0, 100);
         if (
           payload.mode === 'MENTION_ONLY'
           && payload.confirm !== 'ENABLE_GROUP_REPLY'
@@ -332,7 +342,7 @@ export class DashboardServer {
           response.end(JSON.stringify({ error: 'Explicit confirmation is required' }));
           return;
         }
-        Promise.resolve(this.setGroupChatConfig(payload.mode, allowlist))
+        Promise.resolve(this.setGroupChatConfig(payload.mode, allowlist, blockedTerms))
           .then((snapshot) => {
             response.writeHead(200, {
               'Content-Type': 'application/json; charset=utf-8',

@@ -442,7 +442,7 @@ export class OneBotClient {
         case 'get_version_info':
           response = ok({
             app_name: 'feagle-wechat-onebot',
-            app_version: '0.3.0',
+            app_version: '0.4.0',
             protocol_version: 'v11',
           }, echo);
           break;
@@ -519,7 +519,13 @@ export class OneBotClient {
           response = failed(`首期暂不支持 OneBot action: ${action}`, echo, 1404);
       }
     } catch (error) {
-      this.state.addError(`onebot-action:${action}`, error);
+      const expectedSafetyRejection = [
+        'GROUP-POLICY-BLOCKED',
+        'GROUP-FUSED',
+        'GROUP_REPLY_COOLDOWN',
+        'GROUP_REPLY_TOO_LONG',
+      ].includes(error?.code);
+      if (!expectedSafetyRejection) this.state.addError(`onebot-action:${action}`, error);
       response = failed(error.message || String(error), echo);
     }
 

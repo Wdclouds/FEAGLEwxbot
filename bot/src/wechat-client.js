@@ -30,6 +30,11 @@ function positiveInteger(value, fallback) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function nonNegativeInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function withTimeout(promise, timeoutMs, message) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -56,6 +61,8 @@ export class WechatClient {
     initialAdminMode = WECHAT_ADMIN_MODES.RUNNING,
     initialGroupChatMode = GROUP_CHAT_MODES.OFF,
     initialGroupAllowlist = [],
+    initialGroupBlockedTerms = [],
+    groupSafety = null,
     sessionPath = '/app/data/wechat/session.json',
     now = () => Date.now(),
     watchdogIntervalMs = positiveInteger(process.env.WECHAT_WATCHDOG_INTERVAL_MS, 15_000),
@@ -71,6 +78,11 @@ export class WechatClient {
       process.env.BOT_GROUP_REPLY_COOLDOWN_MS,
       5_000,
     ),
+    groupReplyMaxChars = positiveInteger(process.env.BOT_MAX_GROUP_REPLY_CHARS, 1_000),
+    groupJitterMinMs = nonNegativeInteger(process.env.BOT_GROUP_JITTER_MIN_MS, 1_000),
+    groupJitterMaxMs = nonNegativeInteger(process.env.BOT_GROUP_JITTER_MAX_MS, 3_000),
+    random = Math.random,
+    delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   }) {
     this.state = state;
     this.idMap = idMap;
@@ -83,6 +95,8 @@ export class WechatClient {
     this.adminMode = normalizeWechatAdminMode(initialAdminMode);
     this.groupChatMode = normalizeGroupChatMode(initialGroupChatMode);
     this.groupAllowlist = new Set(normalizeGroupAllowlist(initialGroupAllowlist));
+    this.groupSafety = groupSafety;
+    this.groupSafety?.setBlockedTerms(initialGroupBlockedTerms);
     this.sessionPath = sessionPath;
     this.now = now;
     this.watchdogIntervalMs = watchdogIntervalMs;
@@ -95,6 +109,11 @@ export class WechatClient {
     this.fatalAfterMs = fatalAfterMs;
     this.maxMessageAgeMs = maxMessageAgeMs;
     this.groupReplyCooldownMs = groupReplyCooldownMs;
+    this.groupReplyMaxChars = groupReplyMaxChars;
+    this.groupJitterMinMs = Math.min(groupJitterMinMs, groupJitterMaxMs);
+    this.groupJitterMaxMs = Math.max(groupJitterMinMs, groupJitterMaxMs);
+    this.random = random;
+    this.delay = delay;
     this.bot = null;
     this.selfId = null;
     this.loggedIn = false;
@@ -115,9 +134,13 @@ export class WechatClient {
     this.manualReloginInFlight = false;
     this.lastAuxiliaryErrorAt = new Map();
     this.lastGroupReplyAt = new Map();
+    this.groupSendQueues = new Map();
     this.state.patch('groupChat', {
       mode: this.groupChatMode,
       allowlist: [...this.groupAllowlist],
+      blockedTerms: this.groupSafety?.blockedTerms || [],
+      jitterMinMs: this.groupJitterMinMs,
+      jitterMaxMs: this.groupJitterMaxMs,
     });
   }
 
@@ -847,16 +870,18 @@ export class WechatClient {
     });
   }
 
-  setGroupChatConfig(mode, allowlist) {
+  setGroupChatConfig(mode, allowlist, blockedTerms = []) {
     const normalizedMode = normalizeGroupChatMode(mode);
     if (normalizedMode !== mode) {
       throw new TypeError(`Unsupported group chat mode: ${mode}`);
     }
     this.groupChatMode = normalizedMode;
     this.groupAllowlist = new Set(normalizeGroupAllowlist(allowlist));
+    const normalizedTerms = this.groupSafety?.setBlockedTerms(blockedTerms) || [];
     this.state.patch('groupChat', {
       mode: this.groupChatMode,
       allowlist: [...this.groupAllowlist],
+      blockedTerms: normalizedTerms,
     });
     this.syncDiscoveredGroups();
     return this.state.snapshot();
@@ -1089,6 +1114,28 @@ export class WechatClient {
       return;
     }
 
+    const safety = this.groupSafety?.checkInbound({
+      groupId,
+      userId,
+      text: parsed.text,
+    });
+    if (safety && !safety.allowed) {
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      if (safety.status === 'GROUP-POLICY-BLOCKED') {
+        this.state.incrementGroup('policyBlocked');
+      } else if (safety.status.includes('RATE-LIMITED')) {
+        this.state.incrementGroup('rateLimited');
+      }
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+        text: parsed.text,
+        status: safety.status,
+      });
+      return;
+    }
+
     const guard = this.messageGuard?.check({
       userId: `group:${groupId}:user:${userId}`,
       text: parsed.text,
@@ -1127,6 +1174,7 @@ export class WechatClient {
       this.idMap.updateMessageReceipt?.(receipt.messageId, 'FORWARDED');
     } catch (error) {
       this.messageGuard?.rollback(guard);
+      this.groupSafety?.recordFailure(groupId);
       if (error?.code === 'UPSTREAM_BUSY') this.state.increment('blocked');
       this.state.incrementGroup('blocked');
       this.state.addError('group-message-forward', error);
@@ -1162,6 +1210,20 @@ export class WechatClient {
   }
 
   async sendGroupText(onebotGroupId, text) {
+    const groupId = String(onebotGroupId);
+    const previous = this.groupSendQueues.get(groupId) || Promise.resolve();
+    const pending = previous
+      .catch(() => {})
+      .then(() => this.sendGroupTextQueued(groupId, text));
+    this.groupSendQueues.set(groupId, pending);
+    return pending.finally(() => {
+      if (this.groupSendQueues.get(groupId) === pending) {
+        this.groupSendQueues.delete(groupId);
+      }
+    });
+  }
+
+  async sendGroupTextQueued(groupId, text) {
     if (!this.loggedIn) throw new Error('微信尚未登录');
     if (this.adminMode !== WECHAT_ADMIN_MODES.RUNNING) {
       throw new Error('管理员已暂停机器人回复');
@@ -1170,21 +1232,67 @@ export class WechatClient {
     if (this.groupChatMode !== GROUP_CHAT_MODES.MENTION_ONLY) {
       throw new Error('群聊回复模式未启用');
     }
-    const groupId = String(onebotGroupId);
     if (!this.groupAllowlist.has(groupId)) throw new Error('该群不在回复白名单中');
+    if (Array.from(String(text || '')).length > this.groupReplyMaxChars) {
+      const error = new Error(`群聊回复超过 ${this.groupReplyMaxChars} 字，已拦截`);
+      error.code = 'GROUP_REPLY_TOO_LONG';
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      throw error;
+    }
+    const safety = this.groupSafety?.checkOutbound({ groupId, text });
+    if (safety && !safety.allowed) {
+      const error = new Error(
+        safety.status === 'GROUP-POLICY-BLOCKED'
+          ? '群聊回复被本地文本策略拦截'
+          : '该群当前处于自动熔断冷却期',
+      );
+      error.code = safety.status;
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      if (safety.status === 'GROUP-POLICY-BLOCKED') {
+        this.state.incrementGroup('policyBlocked');
+      }
+      throw error;
+    }
     const lastReplyAt = this.lastGroupReplyAt.get(groupId) || 0;
     if (lastReplyAt && this.now() - lastReplyAt < this.groupReplyCooldownMs) {
       const error = new Error('群聊回复冷却中，请稍后再试');
       error.code = 'GROUP_REPLY_COOLDOWN';
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      this.state.incrementGroup('rateLimited');
+      this.groupSafety?.recordAnomaly(groupId);
+      throw error;
+    }
+    const jitterMs = this.groupJitterMinMs + Math.floor(
+      this.random() * (this.groupJitterMaxMs - this.groupJitterMinMs + 1),
+    );
+    this.state.patch('groupChat', { lastJitterMs: jitterMs });
+    if (jitterMs > 0) await this.delay(jitterMs);
+    if (!this.loggedIn || this.adminMode !== WECHAT_ADMIN_MODES.RUNNING || this.isSleeping()) {
+      throw new Error('回复等待期间机器人状态已变化');
+    }
+    const safetyAfterDelay = this.groupSafety?.checkOutbound({ groupId, text });
+    if (safetyAfterDelay && !safetyAfterDelay.allowed) {
+      const error = new Error('回复等待期间群聊安全状态已变化');
+      error.code = safetyAfterDelay.status;
       throw error;
     }
     const protocolId = this.idMap.protocolId(groupId, 'group');
     if (!protocolId) throw new Error(`未找到 OneBot 群映射: ${groupId}`);
     const contact = this.idMap.contact(groupId);
-    const result = await (this.bot.sendText
-      ? this.bot.sendText(text, protocolId)
-      : this.bot.sendMsg(text, protocolId));
+    let result;
+    try {
+      result = await (this.bot.sendText
+        ? this.bot.sendText(text, protocolId)
+        : this.bot.sendMsg(text, protocolId));
+    } catch (error) {
+      this.groupSafety?.recordFailure(groupId);
+      throw error;
+    }
     this.lastGroupReplyAt.set(groupId, this.now());
+    this.groupSafety?.recordSuccess(groupId);
     this.state.increment('replied');
     this.state.incrementGroup('replied');
     this.state.addMessage({

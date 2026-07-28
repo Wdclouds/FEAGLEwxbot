@@ -289,3 +289,36 @@ test('one login incident sends only one QR even when Wechat4u refreshes it', asy
   assert.equal(state.notifications.lastType, 'LOGIN_QR');
   notifier.stop();
 });
+
+test('sends a concise group fuse alert to the bound Feishu recipient', async () => {
+  const state = new RuntimeState();
+  const calls = [];
+  const notifier = configuredNotifier({
+    state,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      if (String(url).includes('/tenant_access_token/internal')) {
+        return jsonResponse({
+          code: 0,
+          tenant_access_token: 't-test',
+          expire: 7_200,
+        });
+      }
+      return jsonResponse({ code: 0, data: { message_id: 'om_fuse' } });
+    },
+  });
+  notifier.start();
+
+  await notifier.sendGroupFuseAlert({
+    groupId: '1001',
+    groupName: 'Test Group',
+    reason: 'RATE_ANOMALY',
+    untilAt: '2026-07-29T00:15:00.000Z',
+  });
+
+  const alert = JSON.parse(JSON.parse(calls[1].options.body).content).text;
+  assert.match(alert, /群聊自动熔断/);
+  assert.match(alert, /短时间频率异常/);
+  assert.equal(state.notifications.lastType, 'GROUP_FUSE');
+  notifier.stop();
+});
