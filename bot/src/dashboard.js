@@ -8,6 +8,7 @@ const CONTENT_TYPES = {
   '.js': 'text/javascript; charset=utf-8',
 };
 const WECHAT_ADMIN_MODES = new Set(['RUNNING', 'PAUSED', 'MANUAL_OFFLINE']);
+const GROUP_CHAT_MODES = new Set(['OFF', 'OBSERVE', 'MENTION_ONLY']);
 
 export class DashboardServer {
   constructor({
@@ -18,6 +19,7 @@ export class DashboardServer {
     sendNotificationTest = async () => state.snapshot(),
     forceWechatRelogin = async () => state.snapshot(),
     setWechatAdminMode = async () => state.snapshot(),
+    setGroupChatConfig = async () => state.snapshot(),
     publicRoot = '/app/src/public',
   }) {
     this.state = state;
@@ -27,6 +29,7 @@ export class DashboardServer {
     this.sendNotificationTest = sendNotificationTest;
     this.forceWechatRelogin = forceWechatRelogin;
     this.setWechatAdminMode = setWechatAdminMode;
+    this.setGroupChatConfig = setGroupChatConfig;
     this.clients = new Set();
     this.publicRoot = publicRoot;
     this.server = createServer((request, response) => {
@@ -268,6 +271,77 @@ export class DashboardServer {
               'WECHAT_ADMIN_MODE_CONFLICT',
             ].includes(error?.code);
             response.writeHead(conflict ? 409 : 502, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify({
+              error: String(error?.message || error).slice(0, 200),
+            }));
+          });
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/group-chat/config') {
+      if (request.method !== 'POST') {
+        response.writeHead(405, {
+          Allow: 'POST',
+          'Content-Type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+      }
+      if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
+        response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+        return;
+      }
+      let body = '';
+      request.setEncoding('utf8');
+      request.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 8_192) request.destroy();
+      });
+      request.on('end', () => {
+        let payload;
+        try {
+          payload = JSON.parse(body);
+        } catch {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Invalid JSON body' }));
+          return;
+        }
+        if (!GROUP_CHAT_MODES.has(payload.mode)) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Unsupported group chat mode' }));
+          return;
+        }
+        if (!Array.isArray(payload.allowlist)) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'allowlist must be an array' }));
+          return;
+        }
+        const allowlist = Array.from(new Set(payload.allowlist
+          .map((item) => String(item || '').trim())
+          .filter((item) => /^\d+$/.test(item))));
+        if (
+          payload.mode === 'MENTION_ONLY'
+          && payload.confirm !== 'ENABLE_GROUP_REPLY'
+        ) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Explicit confirmation is required' }));
+          return;
+        }
+        Promise.resolve(this.setGroupChatConfig(payload.mode, allowlist))
+          .then((snapshot) => {
+            response.writeHead(200, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify(snapshot));
+          })
+          .catch((error) => {
+            response.writeHead(409, {
               'Content-Type': 'application/json; charset=utf-8',
               'Cache-Control': 'no-store',
             });

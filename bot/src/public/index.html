@@ -156,12 +156,57 @@
       </article>
     </section>
 
+    <section class="panel group-panel">
+      <div class="panel-title">
+        <span class="section-number">03</span>
+        <div><strong>群聊安全闸门</strong><small>GROUP CHAT SAFETY GATE</small></div>
+        <span class="mode-badge" id="group-mode-badge">已关闭 / OFF</span>
+      </div>
+      <div class="group-layout">
+        <div class="group-config">
+          <label for="group-mode">处理模式 / MODE</label>
+          <select id="group-mode">
+            <option value="OFF">关闭：完全不处理 / Off</option>
+            <option value="OBSERVE">仅观察：只进面板 / Observe only</option>
+            <option value="MENTION_ONLY">白名单群被 @ 时回复 / Mention only</option>
+          </select>
+          <label for="group-allowlist">允许回复的群 ID / ALLOWLIST IDS</label>
+          <input id="group-allowlist" type="text" inputmode="numeric"
+            placeholder="例如 / e.g. 1000000002, 1000000007">
+          <div class="button-row">
+            <button id="group-config-save" class="button blue" type="button">
+              保存群聊设置 / Save
+            </button>
+          </div>
+          <p class="control-note" id="group-config-hint">
+            默认关闭。观察模式不会调用模型；回复模式仍要求白名单与明确 @。
+            <span>Fail-closed: allowlist and explicit @ are both required.</span>
+          </p>
+        </div>
+        <div class="group-discovery">
+          <div class="control-heading">
+            <strong>已发现群聊 / DISCOVERED GROUPS</strong>
+            <small>点击添加到输入框 / Click to add</small>
+          </div>
+          <div id="group-list" class="group-list">
+            <p class="empty-inline">尚未发现群聊 / No groups discovered</p>
+          </div>
+          <div class="group-stats">
+            <span>观察 <b id="group-observed">0</b><small>OBSERVED</small></span>
+            <span>转发 <b id="group-forwarded">0</b><small>FORWARDED</small></span>
+            <span>回复 <b id="group-replied">0</b><small>REPLIED</small></span>
+            <span>拦截 <b id="group-blocked">0</b><small>BLOCKED</small></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="metrics" id="metrics" aria-label="消息统计 / Message metrics"></section>
 
     <section class="lower-grid">
       <article class="panel">
         <div class="panel-title">
-          <span class="section-number">03</span>
+          <span class="section-number">04</span>
           <div><strong>消息概览</strong><small>MESSAGE FEED</small></div>
           <em>仅内存 · 最近 50 条 / VOLATILE · LAST 50</em>
         </div>
@@ -182,7 +227,7 @@
       </article>
       <article class="panel">
         <div class="panel-title">
-          <span class="section-number">04</span>
+          <span class="section-number">05</span>
           <div><strong>事件日志</strong><small>EVENT LOG</small></div>
         </div>
         <div class="event-log" id="errors">

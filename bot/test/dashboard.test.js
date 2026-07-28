@@ -179,3 +179,45 @@ test('dashboard persists an explicitly confirmed manual-offline mode', async (t)
   const payload = await accepted.json();
   assert.equal(payload.wechat.adminMode, 'MANUAL_OFFLINE');
 });
+
+test('dashboard group reply mode is fail-closed and requires confirmation', async (t) => {
+  const state = new RuntimeState();
+  const calls = [];
+  const dashboard = new DashboardServer({
+    state,
+    host: '127.0.0.1',
+    port: 0,
+    async setGroupChatConfig(mode, allowlist) {
+      calls.push({ mode, allowlist });
+      state.patch('groupChat', { mode, allowlist });
+      return state.snapshot();
+    },
+  });
+  await dashboard.start();
+  t.after(() => dashboard.stop());
+  const { port } = dashboard.server.address();
+  const url = `http://127.0.0.1:${port}/api/group-chat/config`;
+
+  const rejected = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'MENTION_ONLY', allowlist: ['1001'] }),
+  });
+  assert.equal(rejected.status, 400);
+  assert.equal(calls.length, 0);
+
+  const accepted = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mode: 'MENTION_ONLY',
+      allowlist: ['1001', 'bad', 1002],
+      confirm: 'ENABLE_GROUP_REPLY',
+    }),
+  });
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(calls, [{
+    mode: 'MENTION_ONLY',
+    allowlist: ['1001', '1002'],
+  }]);
+});

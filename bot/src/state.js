@@ -42,6 +42,16 @@ export class RuntimeState extends EventEmitter {
       inFlight: 0,
       detail: '等待 AstrBot',
     };
+    this.groupChat = {
+      mode: 'OFF',
+      allowlist: [],
+      discovered: [],
+      observed: 0,
+      forwarded: 0,
+      replied: 0,
+      blocked: 0,
+      lastMessageAt: '',
+    };
     this.schedule = {
       mode: 'ACTIVE',
       testMode: false,
@@ -90,6 +100,27 @@ export class RuntimeState extends EventEmitter {
     this.broadcast();
   }
 
+  incrementGroup(name) {
+    this.groupChat[name] = (this.groupChat[name] || 0) + 1;
+    this.broadcast();
+  }
+
+  upsertGroup(group) {
+    const normalized = {
+      groupId: String(group?.groupId || ''),
+      name: String(group?.name || '微信群').slice(0, 80),
+      memberCount: Number(group?.memberCount || 0),
+      lastSeenAt: new Date().toISOString(),
+    };
+    if (!normalized.groupId) return;
+    const discovered = this.groupChat.discovered
+      .filter((item) => item.groupId !== normalized.groupId);
+    discovered.unshift(normalized);
+    this.groupChat.discovered = discovered.slice(0, 50);
+    this.groupChat.lastMessageAt = normalized.lastSeenAt;
+    this.broadcast();
+  }
+
   addMessage({ direction, peer, text, status }) {
     this.messages.unshift({
       time: new Date().toISOString(),
@@ -132,6 +163,7 @@ export class RuntimeState extends EventEmitter {
       wechat: this.wechat,
       astrbot: this.astrbot,
       onebot: this.onebot,
+      groupChat: this.groupChat,
       schedule: this.schedule,
       notifications: this.notifications,
       counters: this.counters,

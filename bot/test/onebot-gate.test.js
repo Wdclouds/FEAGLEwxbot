@@ -58,3 +58,69 @@ test('OneBot connection waiters fail cleanly when the client stops', async () =>
   await assert.rejects(waiting, (error) => error.code === 'UPSTREAM_UNAVAILABLE');
   assert.equal(onebot.connectionWaiters.size, 0);
 });
+
+test('OneBot emits a standard group message event with an at segment', async () => {
+  let storedEvent;
+  const sentEvents = [];
+  const onebot = client({
+    idMap: {
+      storeMessage: (_id, event) => {
+        storedEvent = event;
+        return 88;
+      },
+      updateMessage: () => {},
+    },
+    wechat: { selfId: 1_000_000_000 },
+  });
+  onebot.ws = { readyState: 1 };
+  onebot.sendEvent = (event) => sentEvents.push(event);
+
+  await onebot.sendGroupText({
+    groupId: 1_000_000_101,
+    groupName: 'Test Group',
+    userId: 1_000_000_102,
+    nickname: 'Alice',
+    text: 'hello',
+    wechatMessageId: 'wx-group-1',
+  });
+
+  assert.equal(storedEvent.message_type, 'group');
+  assert.equal(sentEvents[0].group_id, 1_000_000_101);
+  assert.deepEqual(sentEvents[0].message[0], {
+    type: 'at',
+    data: { qq: '1000000000' },
+  });
+  assert.equal(sentEvents[0].message_id, 88);
+  onebot.clearPendingRequests();
+});
+
+test('OneBot send_group_msg releases the pending group request and calls WeChat', async () => {
+  const calls = [];
+  const responses = [];
+  const onebot = client({
+    wechat: {
+      async sendGroupText(groupId, text) {
+        calls.push({ groupId, text });
+        return { MsgID: '99' };
+      },
+    },
+  });
+  onebot.ws = {
+    readyState: 1,
+    send: (payload) => responses.push(JSON.parse(payload)),
+  };
+  onebot.reserveRequest('group:1000000101');
+
+  await onebot.handleAction(Buffer.from(JSON.stringify({
+    action: 'send_group_msg',
+    params: {
+      group_id: 1_000_000_101,
+      message: [{ type: 'text', data: { text: 'reply' } }],
+    },
+    echo: 'group-reply',
+  })));
+
+  assert.deepEqual(calls, [{ groupId: 1_000_000_101, text: 'reply' }]);
+  assert.equal(onebot.state.onebot.inFlight, 0);
+  assert.equal(responses[0].status, 'ok');
+});

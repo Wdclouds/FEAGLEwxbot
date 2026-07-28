@@ -17,6 +17,13 @@ import {
   WECHAT_ADMIN_MODES,
   normalizeWechatAdminMode,
 } from './control-state.js';
+import {
+  GROUP_CHAT_MODES,
+  isWechatGroupMessage,
+  normalizeGroupAllowlist,
+  normalizeGroupChatMode,
+  parseWechatGroupText,
+} from './group-chat.js';
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -42,10 +49,13 @@ export class WechatClient {
     idMap,
     isSleeping,
     onPrivateText,
+    onGroupText = async () => {},
     messageGuard = null,
     onFatal = () => {},
     onReloginOutcome = () => {},
     initialAdminMode = WECHAT_ADMIN_MODES.RUNNING,
+    initialGroupChatMode = GROUP_CHAT_MODES.OFF,
+    initialGroupAllowlist = [],
     sessionPath = '/app/data/wechat/session.json',
     now = () => Date.now(),
     watchdogIntervalMs = positiveInteger(process.env.WECHAT_WATCHDOG_INTERVAL_MS, 15_000),
@@ -56,15 +66,23 @@ export class WechatClient {
     recoveryBaseDelayMs = positiveInteger(process.env.WECHAT_RECOVERY_BASE_DELAY_MS, 15_000),
     maxRecoveryFailures = positiveInteger(process.env.WECHAT_MAX_RECOVERY_FAILURES, 3),
     fatalAfterMs = positiveInteger(process.env.WECHAT_FATAL_AFTER_MS, 10 * 60_000),
+    maxMessageAgeMs = positiveInteger(process.env.BOT_MAX_MESSAGE_AGE_MS, 10 * 60_000),
+    groupReplyCooldownMs = positiveInteger(
+      process.env.BOT_GROUP_REPLY_COOLDOWN_MS,
+      5_000,
+    ),
   }) {
     this.state = state;
     this.idMap = idMap;
     this.isSleeping = isSleeping;
     this.onPrivateText = onPrivateText;
+    this.onGroupText = onGroupText;
     this.messageGuard = messageGuard;
     this.onFatal = onFatal;
     this.onReloginOutcome = onReloginOutcome;
     this.adminMode = normalizeWechatAdminMode(initialAdminMode);
+    this.groupChatMode = normalizeGroupChatMode(initialGroupChatMode);
+    this.groupAllowlist = new Set(normalizeGroupAllowlist(initialGroupAllowlist));
     this.sessionPath = sessionPath;
     this.now = now;
     this.watchdogIntervalMs = watchdogIntervalMs;
@@ -75,6 +93,8 @@ export class WechatClient {
     this.recoveryBaseDelayMs = recoveryBaseDelayMs;
     this.maxRecoveryFailures = maxRecoveryFailures;
     this.fatalAfterMs = fatalAfterMs;
+    this.maxMessageAgeMs = maxMessageAgeMs;
+    this.groupReplyCooldownMs = groupReplyCooldownMs;
     this.bot = null;
     this.selfId = null;
     this.loggedIn = false;
@@ -94,6 +114,11 @@ export class WechatClient {
     this.firstSyncErrorAt = 0;
     this.manualReloginInFlight = false;
     this.lastAuxiliaryErrorAt = new Map();
+    this.lastGroupReplyAt = new Map();
+    this.state.patch('groupChat', {
+      mode: this.groupChatMode,
+      allowlist: [...this.groupAllowlist],
+    });
   }
 
   async start() {
@@ -273,6 +298,7 @@ export class WechatClient {
         lastSyncAt: '',
         syncAgeMs: 0,
       });
+      this.syncDiscoveredGroups();
     });
 
     bot.on('protocol-sync', ({ at }) => {
@@ -336,6 +362,7 @@ export class WechatClient {
 
     bot.on('contacts-updated', () => {
       if (this.bot !== bot) return;
+      this.syncDiscoveredGroups();
       if (this.loggedIn) this.saveSession();
     });
 
@@ -820,11 +847,67 @@ export class WechatClient {
     });
   }
 
+  setGroupChatConfig(mode, allowlist) {
+    const normalizedMode = normalizeGroupChatMode(mode);
+    if (normalizedMode !== mode) {
+      throw new TypeError(`Unsupported group chat mode: ${mode}`);
+    }
+    this.groupChatMode = normalizedMode;
+    this.groupAllowlist = new Set(normalizeGroupAllowlist(allowlist));
+    this.state.patch('groupChat', {
+      mode: this.groupChatMode,
+      allowlist: [...this.groupAllowlist],
+    });
+    this.syncDiscoveredGroups();
+    return this.state.snapshot();
+  }
+
+  syncDiscoveredGroups() {
+    for (const contact of Object.values(this.bot?.contacts || {})) {
+      if (!String(contact?.UserName || '').startsWith('@@')) continue;
+      const groupId = this.idMap.entity(
+        'group',
+        contact.UserName,
+        contact.EncryChatRoomId || '',
+        contact.RemarkName || contact.NickName || '微信群',
+      );
+      this.state.upsertGroup({
+        groupId,
+        name: contact.RemarkName || contact.NickName || '微信群',
+        memberCount: contact.MemberCount || contact.MemberList?.length || 0,
+      });
+    }
+  }
+
+  messageIsFresh(message) {
+    const createTime = Number(message?.CreateTime || 0);
+    if (!createTime) return true;
+    const createdAt = createTime < 10_000_000_000 ? createTime * 1_000 : createTime;
+    return this.now() - createdAt <= this.maxMessageAgeMs;
+  }
+
+  claimMessage(message, kind) {
+    const messageId = message.MsgId || message.MsgID || message.NewMsgId || '';
+    if (!this.messageIsFresh(message)) return { claimed: false, messageId, status: 'STALE-REPLAY' };
+    const claimed = this.idMap.claimMessage
+      ? this.idMap.claimMessage(messageId, kind)
+      : true;
+    return {
+      claimed,
+      messageId,
+      status: claimed ? 'RECEIVED' : 'DUPLICATE-REPLAY',
+    };
+  }
+
   async handleMessage(message) {
     if (!this.loggedIn || !this.selfId) return;
-    if (message.FromUserName === this.bot.user?.UserName) return;
     if (message.MsgType !== this.bot.CONF.MSGTYPE_TEXT) return;
-    if (!message.FromUserName || message.FromUserName.startsWith('@@')) return;
+    if (!message.FromUserName) return;
+    if (isWechatGroupMessage(message)) {
+      await this.handleGroupMessage(message);
+      return;
+    }
+    if (message.FromUserName === this.bot.user?.UserName) return;
     if (['filehelper', 'newsapp', 'fmessage'].includes(message.FromUserName)) return;
 
     const text = String(message.Content || '').trim();
@@ -840,6 +923,17 @@ export class WechatClient {
     );
 
     this.state.increment('received');
+    const receipt = this.claimMessage(message, 'private');
+    if (!receipt.claimed) {
+      this.state.increment('blocked');
+      this.state.addMessage({
+        direction: 'IN',
+        peer: nickname,
+        text,
+        status: receipt.status,
+      });
+      return;
+    }
     if (this.adminMode === WECHAT_ADMIN_MODES.PAUSED) {
       this.state.increment('dropped');
       this.state.addMessage({
@@ -861,7 +955,7 @@ export class WechatClient {
       return;
     }
 
-    const wechatMessageId = message.MsgId || message.MsgID || message.NewMsgId || '';
+    const wechatMessageId = receipt.messageId;
     const guard = this.messageGuard?.check({
       userId,
       text,
@@ -891,6 +985,7 @@ export class WechatClient {
         text,
         wechatMessageId,
       });
+      this.idMap.updateMessageReceipt?.(wechatMessageId, 'FORWARDED');
     } catch (error) {
       this.messageGuard?.rollback(guard);
       if (error?.code === 'UPSTREAM_BUSY') this.state.increment('blocked');
@@ -899,6 +994,146 @@ export class WechatClient {
         direction: 'IN',
         peer: nickname,
         text,
+        status: error?.code === 'UPSTREAM_BUSY' ? 'UPSTREAM-BUSY' : 'FORWARD-FAILED',
+      });
+    }
+  }
+
+  async handleGroupMessage(message) {
+    const group = this.bot.contacts?.[message.FromUserName] || {};
+    const parsed = parseWechatGroupText({
+      message,
+      group,
+      selfUserName: this.bot.user?.UserName || '',
+      selfNickName: this.bot.user?.NickName || '',
+    });
+    if (!parsed || parsed.isSelf || !parsed.rawText) return;
+
+    const groupId = this.idMap.entity(
+      'group',
+      parsed.groupProtocolId,
+      group.EncryChatRoomId || '',
+      parsed.groupName,
+    );
+    const userId = this.idMap.entity(
+      'group_member',
+      parsed.senderProtocolId,
+      parsed.senderStableKey,
+      parsed.senderNickname,
+    );
+    this.state.increment('received');
+    this.state.upsertGroup({
+      groupId,
+      name: parsed.groupName,
+      memberCount: parsed.memberCount,
+    });
+    const receipt = this.claimMessage(message, 'group');
+    if (!receipt.claimed) {
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+        text: parsed.rawText,
+        status: receipt.status,
+      });
+      return;
+    }
+
+    if (this.groupChatMode === GROUP_CHAT_MODES.OFF) {
+      this.state.increment('dropped');
+      this.state.incrementGroup('blocked');
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+        text: parsed.rawText,
+        status: 'GROUP-OFF',
+      });
+      return;
+    }
+
+    this.state.incrementGroup('observed');
+    if (this.groupChatMode === GROUP_CHAT_MODES.OBSERVE) {
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+        text: parsed.rawText,
+        status: 'GROUP-OBSERVED',
+      });
+      return;
+    }
+
+    const allowed = this.groupAllowlist.has(String(groupId));
+    if (!allowed || !parsed.mentioned || !parsed.text) {
+      this.state.increment('dropped');
+      this.state.incrementGroup('blocked');
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+        text: parsed.rawText,
+        status: !allowed
+          ? 'GROUP-NOT-ALLOWED'
+          : (parsed.mentioned ? 'GROUP-EMPTY-MENTION' : 'GROUP-NOT-MENTIONED'),
+      });
+      return;
+    }
+    if (this.adminMode === WECHAT_ADMIN_MODES.PAUSED || this.isSleeping()) {
+      this.state.increment('dropped');
+      this.state.incrementGroup('blocked');
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+        text: parsed.text,
+        status: this.isSleeping() ? 'SLEEP-DROP' : 'ADMIN-PAUSED',
+      });
+      return;
+    }
+
+    const guard = this.messageGuard?.check({
+      userId: `group:${groupId}:user:${userId}`,
+      text: parsed.text,
+      wechatMessageId: receipt.messageId,
+    });
+    if (guard && !guard.allowed) {
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+        text: parsed.text,
+        status: guard.status,
+      });
+      return;
+    }
+
+    this.state.addMessage({
+      direction: 'IN',
+      peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+      text: parsed.text,
+      status: 'GROUP-MENTION',
+    });
+    try {
+      await this.onGroupText({
+        groupId,
+        groupName: parsed.groupName,
+        userId,
+        nickname: parsed.senderNickname,
+        text: parsed.text,
+        rawText: parsed.rawText,
+        mentioned: true,
+        wechatMessageId: receipt.messageId,
+      });
+      this.state.incrementGroup('forwarded');
+      this.idMap.updateMessageReceipt?.(receipt.messageId, 'FORWARDED');
+    } catch (error) {
+      this.messageGuard?.rollback(guard);
+      if (error?.code === 'UPSTREAM_BUSY') this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      this.state.addError('group-message-forward', error);
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `${parsed.groupName} · ${parsed.senderNickname}`,
+        text: parsed.text,
         status: error?.code === 'UPSTREAM_BUSY' ? 'UPSTREAM-BUSY' : 'FORWARD-FAILED',
       });
     }
@@ -922,6 +1157,41 @@ export class WechatClient {
       peer: contact?.nickname || onebotUserId,
       text,
       status: 'SENT',
+    });
+    return result;
+  }
+
+  async sendGroupText(onebotGroupId, text) {
+    if (!this.loggedIn) throw new Error('微信尚未登录');
+    if (this.adminMode !== WECHAT_ADMIN_MODES.RUNNING) {
+      throw new Error('管理员已暂停机器人回复');
+    }
+    if (this.isSleeping()) throw new Error('机器人处于定时休眠时段');
+    if (this.groupChatMode !== GROUP_CHAT_MODES.MENTION_ONLY) {
+      throw new Error('群聊回复模式未启用');
+    }
+    const groupId = String(onebotGroupId);
+    if (!this.groupAllowlist.has(groupId)) throw new Error('该群不在回复白名单中');
+    const lastReplyAt = this.lastGroupReplyAt.get(groupId) || 0;
+    if (lastReplyAt && this.now() - lastReplyAt < this.groupReplyCooldownMs) {
+      const error = new Error('群聊回复冷却中，请稍后再试');
+      error.code = 'GROUP_REPLY_COOLDOWN';
+      throw error;
+    }
+    const protocolId = this.idMap.protocolId(groupId, 'group');
+    if (!protocolId) throw new Error(`未找到 OneBot 群映射: ${groupId}`);
+    const contact = this.idMap.contact(groupId);
+    const result = await (this.bot.sendText
+      ? this.bot.sendText(text, protocolId)
+      : this.bot.sendMsg(text, protocolId));
+    this.lastGroupReplyAt.set(groupId, this.now());
+    this.state.increment('replied');
+    this.state.incrementGroup('replied');
+    this.state.addMessage({
+      direction: 'OUT',
+      peer: contact?.nickname || groupId,
+      text,
+      status: 'GROUP-SENT',
     });
     return result;
   }

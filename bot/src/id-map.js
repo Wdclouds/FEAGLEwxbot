@@ -27,6 +27,15 @@ export class IdMap {
         event_json TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS message_receipts (
+        wechat_message_id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_message_receipts_created
+        ON message_receipts(created_at);
     `);
   }
 
@@ -115,6 +124,35 @@ export class IdMap {
       'SELECT event_json FROM messages WHERE onebot_message_id = ?',
     ).get(Number(onebotMessageId));
     return row ? JSON.parse(row.event_json) : null;
+  }
+
+  claimMessage(wechatMessageId, kind = 'private') {
+    const messageId = String(wechatMessageId || '').trim();
+    if (!messageId) return true;
+    const now = new Date().toISOString();
+    const result = this.db.prepare(`
+      INSERT OR IGNORE INTO message_receipts
+        (wechat_message_id, kind, status, created_at, updated_at)
+      VALUES (?, ?, 'RECEIVED', ?, ?)
+    `).run(messageId, kind, now, now);
+    return Number(result.changes) === 1;
+  }
+
+  updateMessageReceipt(wechatMessageId, status) {
+    const messageId = String(wechatMessageId || '').trim();
+    if (!messageId) return;
+    this.db.prepare(`
+      UPDATE message_receipts
+      SET status = ?, updated_at = ?
+      WHERE wechat_message_id = ?
+    `).run(String(status || 'UNKNOWN'), new Date().toISOString(), messageId);
+  }
+
+  pruneMessageReceipts(retentionMs = 7 * 24 * 60 * 60_000) {
+    const cutoff = new Date(Date.now() - retentionMs).toISOString();
+    return Number(this.db.prepare(
+      'DELETE FROM message_receipts WHERE created_at < ?',
+    ).run(cutoff).changes);
   }
 
   close() {

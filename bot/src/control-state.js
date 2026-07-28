@@ -6,6 +6,11 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
+import {
+  GROUP_CHAT_MODES,
+  normalizeGroupAllowlist,
+  normalizeGroupChatMode,
+} from './group-chat.js';
 
 export const WECHAT_ADMIN_MODES = Object.freeze({
   RUNNING: 'RUNNING',
@@ -33,12 +38,16 @@ export class PersistentControlState {
     if (!existsSync(this.path)) {
       return {
         wechatAdminMode: WECHAT_ADMIN_MODES.RUNNING,
+        groupChatMode: GROUP_CHAT_MODES.OFF,
+        groupAllowlist: [],
         changedAt: '',
       };
     }
     const stored = JSON.parse(readFileSync(this.path, 'utf8'));
     return {
       wechatAdminMode: normalizeWechatAdminMode(stored?.wechatAdminMode),
+      groupChatMode: normalizeGroupChatMode(stored?.groupChatMode),
+      groupAllowlist: normalizeGroupAllowlist(stored?.groupAllowlist),
       changedAt: String(stored?.changedAt || ''),
     };
   }
@@ -48,10 +57,36 @@ export class PersistentControlState {
     if (mode !== wechatAdminMode) {
       throw new TypeError(`Unsupported WeChat admin mode: ${wechatAdminMode}`);
     }
-    const snapshot = {
-      version: 1,
+    const current = this.load();
+    return this.write({
+      ...current,
       wechatAdminMode: mode,
       changedAt: new Date(this.now()).toISOString(),
+    });
+  }
+
+  saveGroupChatConfig(groupChatMode, groupAllowlist) {
+    const mode = normalizeGroupChatMode(groupChatMode);
+    const allowlist = normalizeGroupAllowlist(groupAllowlist);
+    if (mode !== groupChatMode) {
+      throw new TypeError(`Unsupported group chat mode: ${groupChatMode}`);
+    }
+    const current = this.load();
+    return this.write({
+      ...current,
+      groupChatMode: mode,
+      groupAllowlist: allowlist,
+      changedAt: new Date(this.now()).toISOString(),
+    });
+  }
+
+  write(values) {
+    const snapshot = {
+      version: 2,
+      wechatAdminMode: normalizeWechatAdminMode(values.wechatAdminMode),
+      groupChatMode: normalizeGroupChatMode(values.groupChatMode),
+      groupAllowlist: normalizeGroupAllowlist(values.groupAllowlist),
+      changedAt: String(values.changedAt || new Date(this.now()).toISOString()),
     };
     mkdirSync(dirname(this.path), { recursive: true });
     const tempPath = `${this.path}.tmp`;

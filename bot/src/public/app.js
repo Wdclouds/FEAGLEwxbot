@@ -40,6 +40,9 @@ const statusLabels = {
   FAILED: '失败 / FAILED',
   OFFLINE: '离线 / OFFLINE',
   SENDING: '发送中 / SENDING',
+  OFF: '已关闭 / OFF',
+  OBSERVE: '仅观察 / OBSERVE',
+  MENTION_ONLY: '被 @ 时回复 / MENTION ONLY',
 };
 
 const messageStatusLabels = {
@@ -49,6 +52,15 @@ const messageStatusLabels = {
   'ADMIN-PAUSED': '暂停丢弃 / PAUSED',
   'UPSTREAM-BUSY': '上游繁忙 / BUSY',
   'FORWARD-FAILED': '转发失败 / FAILED',
+  'DUPLICATE-REPLAY': '重放拦截 / REPLAY BLOCKED',
+  'STALE-REPLAY': '过期拦截 / STALE BLOCKED',
+  'GROUP-OFF': '群聊关闭 / GROUP OFF',
+  'GROUP-OBSERVED': '群聊观察 / OBSERVED',
+  'GROUP-NOT-ALLOWED': '群不在白名单 / NOT ALLOWED',
+  'GROUP-NOT-MENTIONED': '未 @ 机器人 / NOT MENTIONED',
+  'GROUP-EMPTY-MENTION': '空 @ / EMPTY MENTION',
+  'GROUP-MENTION': '群聊 @ / GROUP MENTION',
+  'GROUP-SENT': '群聊已发送 / GROUP SENT',
 };
 
 function bilingualStatus(value) {
@@ -128,8 +140,63 @@ function renderAdminMode(state) {
   offlineButton.dataset.mode = mode;
 }
 
+function allowlistFromInput() {
+  return Array.from(new Set($('group-allowlist').value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => /^\d+$/.test(item))));
+}
+
+function renderGroupChat(state) {
+  const groupChat = state.groupChat || {
+    mode: 'OFF',
+    allowlist: [],
+    discovered: [],
+  };
+  const badge = $('group-mode-badge');
+  badge.dataset.mode = groupChat.mode;
+  badge.textContent = bilingualStatus(groupChat.mode);
+  if (document.activeElement !== $('group-mode')) $('group-mode').value = groupChat.mode;
+  if (document.activeElement !== $('group-allowlist')) {
+    $('group-allowlist').value = (groupChat.allowlist || []).join(', ');
+  }
+  $('group-observed').textContent = groupChat.observed || 0;
+  $('group-forwarded').textContent = groupChat.forwarded || 0;
+  $('group-replied').textContent = groupChat.replied || 0;
+  $('group-blocked').textContent = groupChat.blocked || 0;
+
+  const discovered = groupChat.discovered || [];
+  if (!discovered.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-inline';
+    empty.textContent = '尚未发现群聊 / No groups discovered';
+    $('group-list').replaceChildren(empty);
+    return;
+  }
+  $('group-list').replaceChildren(...discovered.map((group) => {
+    const button = document.createElement('button');
+    button.className = 'group-chip';
+    button.type = 'button';
+    button.dataset.groupId = group.groupId;
+    const name = document.createElement('strong');
+    name.textContent = group.name;
+    const meta = document.createElement('small');
+    meta.textContent = `ID ${group.groupId} · ${group.memberCount || 0} members`;
+    button.append(name, meta);
+    button.addEventListener('click', () => {
+      const values = new Set(allowlistFromInput());
+      values.add(String(group.groupId));
+      $('group-allowlist').value = [...values].join(', ');
+      $('group-config-hint').textContent =
+        `已加入输入框 / Added：${group.name}；点击保存后生效 / Save to apply`;
+    });
+    return button;
+  }));
+}
+
 function render(state) {
   renderAdminMode(state);
+  renderGroupChat(state);
   $('account').textContent = state.wechat.account || '--';
   $('session-status').textContent = bilingualStatus(state.wechat.status);
   $('protocol-health').textContent = bilingualStatus(state.wechat.protocolHealth || 'UNKNOWN');
@@ -320,6 +387,44 @@ $('manual-offline-toggle').addEventListener('click', async () => {
     await setAdminMode(nextMode);
   } catch (error) {
     $('manual-offline-hint').textContent = `切换失败 / Failed：${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('group-config-save').addEventListener('click', async () => {
+  const button = $('group-config-save');
+  const hint = $('group-config-hint');
+  const mode = $('group-mode').value;
+  const allowlist = allowlistFromInput();
+  if (
+    mode === 'MENTION_ONLY'
+    && !window.confirm(
+      '启用后，只有白名单群中明确 @ 机器人的文本才会进入 AstrBot 并可能产生回复。空白名单仍不会回复。\n\nOnly explicit @ messages from allowlisted groups can reach AstrBot. Continue?',
+    )
+  ) return;
+  button.disabled = true;
+  hint.textContent = '正在保存 / Saving...';
+  try {
+    const response = await fetch('/api/group-chat/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode,
+        allowlist,
+        confirm: mode === 'MENTION_ONLY' ? 'ENABLE_GROUP_REPLY' : undefined,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '保存失败 / Save failed');
+    render(payload);
+    hint.innerHTML = mode === 'OFF'
+      ? '群聊已完全关闭。<span>Group processing is fully disabled.</span>'
+      : mode === 'OBSERVE'
+        ? '仅观察：不会送入 AstrBot 或调用模型。<span>No AstrBot or model calls.</span>'
+        : '仅白名单群内明确 @ 才会回复。<span>Allowlist + explicit @ required.</span>';
+  } catch (error) {
+    hint.textContent = `保存失败 / Failed：${error.message}`;
   } finally {
     button.disabled = false;
   }

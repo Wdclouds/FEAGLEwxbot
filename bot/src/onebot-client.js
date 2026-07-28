@@ -201,6 +201,62 @@ export class OneBotClient {
     return pendingId;
   }
 
+  async sendGroupText({
+    groupId,
+    groupName,
+    userId,
+    nickname,
+    text,
+    wechatMessageId,
+  }) {
+    await this.waitForConnection();
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      throw new Error('AstrBot OneBot WebSocket 未连接');
+    }
+    const pendingKey = `group:${groupId}`;
+    const pendingId = this.reserveRequest(pendingKey);
+    const event = {
+      time: Math.floor(Date.now() / 1000),
+      self_id: this.wechat.selfId,
+      post_type: 'message',
+      message_type: 'group',
+      sub_type: 'normal',
+      message_id: 0,
+      group_id: Number(groupId),
+      user_id: Number(userId),
+      message: [
+        { type: 'at', data: { qq: String(this.wechat.selfId) } },
+        { type: 'text', data: { text } },
+      ],
+      raw_message: `[CQ:at,qq=${this.wechat.selfId}] ${text}`,
+      font: 0,
+      sender: {
+        user_id: Number(userId),
+        nickname,
+        card: nickname,
+        sex: 'unknown',
+        age: 0,
+        area: '',
+        level: '',
+        role: 'member',
+        title: '',
+      },
+      anonymous: null,
+      group_name: groupName,
+    };
+    try {
+      const messageId = this.idMap.storeMessage(wechatMessageId, event);
+      event.message_id = messageId;
+      this.idMap.updateMessage(messageId, event);
+      this.sendEvent(event);
+      this.state.increment('forwarded');
+    } catch (error) {
+      this.releaseRequest(pendingId);
+      throw error;
+    }
+    return pendingId;
+  }
+
   waitForConnection() {
     if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
     if (this.stopping) {
@@ -326,6 +382,51 @@ export class OneBotClient {
           }, echo);
           break;
         }
+        case 'send_group_msg': {
+          this.releaseOldestForUser(`group:${params.group_id}`);
+          if (this.isSleeping()) {
+            response = failed('机器人处于定时休眠时段', echo, 1403);
+            break;
+          }
+          const text = extractPlainText(params.message);
+          if (!text) {
+            response = failed('群聊当前仅支持文本回复', echo, 1404);
+            break;
+          }
+          const result = await this.wechat.sendGroupText(params.group_id, text);
+          response = ok({
+            message_id: Number(result?.MsgID || result?.MsgId || Date.now() % 2_000_000_000),
+          }, echo);
+          break;
+        }
+        case 'send_msg': {
+          const messageType = params.message_type
+            || (params.group_id ? 'group' : 'private');
+          if (messageType === 'group') {
+            this.releaseOldestForUser(`group:${params.group_id}`);
+            const text = extractPlainText(params.message);
+            if (!text) {
+              response = failed('群聊当前仅支持文本回复', echo, 1404);
+              break;
+            }
+            const result = await this.wechat.sendGroupText(params.group_id, text);
+            response = ok({
+              message_id: Number(result?.MsgID || result?.MsgId || Date.now() % 2_000_000_000),
+            }, echo);
+          } else {
+            this.releaseOldestForUser(params.user_id);
+            const text = extractPlainText(params.message);
+            if (!text) {
+              response = failed('当前仅支持文本消息', echo, 1404);
+              break;
+            }
+            const result = await this.wechat.sendText(params.user_id, text);
+            response = ok({
+              message_id: Number(result?.MsgID || result?.MsgId || Date.now() % 2_000_000_000),
+            }, echo);
+          }
+          break;
+        }
         case 'get_login_info':
           response = ok({
             user_id: this.wechat.selfId,
@@ -341,7 +442,7 @@ export class OneBotClient {
         case 'get_version_info':
           response = ok({
             app_name: 'feagle-wechat-onebot',
-            app_version: '0.2.0',
+            app_version: '0.3.0',
             protocol_version: 'v11',
           }, echo);
           break;
@@ -364,6 +465,49 @@ export class OneBotClient {
             remark: '',
           })), echo);
           break;
+        case 'get_group_list':
+          response = ok(this.idMap.contacts('group').map((group) => ({
+            group_id: Number(group.onebot_id),
+            group_name: group.nickname || '微信群',
+            member_count: 0,
+            max_member_count: 0,
+          })), echo);
+          break;
+        case 'get_group_info': {
+          const group = this.idMap.contact(params.group_id);
+          response = group
+            ? ok({
+              group_id: Number(group.onebot_id),
+              group_name: group.nickname || '微信群',
+              member_count: 0,
+              max_member_count: 0,
+            }, echo)
+            : failed('未找到群聊', echo, 1404);
+          break;
+        }
+        case 'get_group_member_info': {
+          const member = this.idMap.contact(params.user_id);
+          response = member
+            ? ok({
+              group_id: Number(params.group_id),
+              user_id: Number(member.onebot_id),
+              nickname: member.nickname || '群成员',
+              card: member.nickname || '群成员',
+              sex: 'unknown',
+              age: 0,
+              area: '',
+              join_time: 0,
+              last_sent_time: 0,
+              level: '',
+              role: 'member',
+              unfriendly: false,
+              title: '',
+              title_expire_time: 0,
+              card_changeable: false,
+            }, echo)
+            : failed('未找到群成员', echo, 1404);
+          break;
+        }
         case 'get_msg': {
           const event = this.idMap.message(params.message_id);
           response = event

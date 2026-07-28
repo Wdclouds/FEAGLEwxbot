@@ -12,6 +12,7 @@ import {
   PersistentControlState,
   WECHAT_ADMIN_MODES,
 } from './control-state.js';
+import { GROUP_CHAT_MODES } from './group-chat.js';
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -32,6 +33,8 @@ const controlStore = new PersistentControlState({
 });
 let savedControl = {
   wechatAdminMode: WECHAT_ADMIN_MODES.RUNNING,
+  groupChatMode: GROUP_CHAT_MODES.OFF,
+  groupAllowlist: [],
   changedAt: '',
 };
 try {
@@ -42,6 +45,10 @@ try {
 state.patch('wechat', {
   adminMode: savedControl.wechatAdminMode,
   adminModeChangedAt: savedControl.changedAt,
+});
+state.patch('groupChat', {
+  mode: savedControl.groupChatMode,
+  allowlist: savedControl.groupAllowlist,
 });
 const quietRange = parseQuietHours(process.env.BOT_QUIET_HOURS || '00:00-07:00');
 const timezone = process.env.BOT_TIMEZONE || 'Asia/Shanghai';
@@ -100,8 +107,13 @@ const dashboard = new DashboardServer({
     }
     return wechat.setAdminMode(mode);
   },
+  setGroupChatConfig: async (mode, allowlist) => {
+    controlStore.saveGroupChatConfig(mode, allowlist);
+    return wechat.setGroupChatConfig(mode, allowlist);
+  },
 });
 const idMap = new IdMap();
+idMap.pruneMessageReceipts();
 const astrbot = new AstrBotSupervisor({ state });
 const messageGuard = new MessageGuard({
   maxCodePoints: positiveInteger(process.env.BOT_MAX_MESSAGE_CHARS, 2_000),
@@ -126,7 +138,10 @@ wechat = new WechatClient({
   },
   onReloginOutcome: (outcome) => notifier.finishReloginTest(outcome),
   initialAdminMode: savedControl.wechatAdminMode,
+  initialGroupChatMode: savedControl.groupChatMode,
+  initialGroupAllowlist: savedControl.groupAllowlist,
   onPrivateText: async (message) => onebot.sendPrivateText(message),
+  onGroupText: async (message) => onebot.sendGroupText(message),
 });
 
 onebot = new OneBotClient({
