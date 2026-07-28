@@ -1,0 +1,36 @@
+# Private configuration
+.env
+.env.*
+!.env.example
+bot/.env
+
+# Runtime state and credentials
+data/
+bot/data/
+bot/downloads/
+bot/tools/
+bot/AstrBot/
+
+# Dependencies and build output
+node_modules/
+bot/node_modules/
+__pycache__/
+*.py[cod]
+coverage/
+dist/
+*.log
+npm-debug.log*
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local overrides and archives
+compose.override.yml
+docker-compose.override.yml
+backups/
+*.zip
+*.tar
+*.tar.gz

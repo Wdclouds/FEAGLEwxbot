@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Feagle WxBot Console</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="scanlines"></div>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">$ ssh feagle-wxbot@ecs</p>
+        <h1>WECHAT BOT <span>CONTROL DECK</span></h1>
+      </div>
+      <div class="clock" id="clock">--:--:--</div>
+    </header>
+
+    <section class="status-grid">
+      <article class="panel hero">
+        <div class="panel-title"><span>01</span> LOGIN TERMINAL</div>
+        <div class="login-layout">
+          <div class="qr-shell">
+            <img id="qr" alt="微信登录二维码">
+            <div id="qr-placeholder" class="qr-placeholder">
+              <span class="pulse"></span>
+              <strong id="wechat-status">STARTING</strong>
+              <small id="wechat-detail">正在初始化</small>
+            </div>
+          </div>
+          <div class="login-copy">
+            <p class="label">ACCOUNT</p>
+            <p class="value" id="account">--</p>
+            <p class="label">SESSION</p>
+            <p class="value" id="session-status">STARTING</p>
+            <div class="protocol-health">
+              <div>
+                <span>PROTOCOL SYNC</span>
+                <strong id="protocol-health">UNKNOWN</strong>
+                <small id="last-sync">LAST --</small>
+              </div>
+              <div>
+                <span>SELF HEAL</span>
+                <strong id="recovery-attempts">0</strong>
+                <small id="sync-errors">ERRORS 0</small>
+              </div>
+            </div>
+            <p class="hint" id="qr-time">等待协议状态...</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-title"><span>02</span> SERVICE MATRIX</div>
+        <div class="service" data-key="astrbot">
+          <i></i><b>ASTRBOT</b><span id="astrbot-status">STARTING</span>
+        </div>
+        <p id="astrbot-detail" class="service-detail">等待启动</p>
+        <div class="service" data-key="onebot">
+          <i></i><b>ONEBOT WS</b><span id="onebot-status">DISCONNECTED</span>
+        </div>
+        <p id="onebot-detail" class="service-detail">等待连接</p>
+        <div class="service" data-key="notifications">
+          <i></i><b>FEISHU DM</b><span id="notifications-status">DISABLED</span>
+        </div>
+        <p id="notifications-detail" class="service-detail">WAITING CONFIG</p>
+        <div class="service" data-key="schedule">
+          <i></i><b>SCHEDULE</b><span id="schedule-status">ACTIVE</span>
+        </div>
+        <p class="service-detail"><span id="timezone">Asia/Shanghai</span> · <span id="quiet-hours">00:00-07:00</span></p>
+        <div class="test-mode-control">
+          <button id="test-mode-toggle" type="button" aria-pressed="false">
+            开启测试模式
+          </button>
+          <p id="test-mode-hint">开启后临时忽略休眠时段，再次点击即可恢复。</p>
+        </div>
+        <div class="test-mode-control notification-control">
+          <button id="notification-test" type="button">TEST FEISHU DM</button>
+          <p id="notification-test-hint">发送一条私聊测试通知，不会改变微信状态。</p>
+        </div>
+        <div class="test-mode-control force-relogin-control">
+          <button id="force-relogin-test" type="button">强制下线测试</button>
+          <p id="force-relogin-hint">会注销当前微信 Session，并通过飞书发送新二维码和登录结果。</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="metrics" id="metrics"></section>
+
+    <section class="lower-grid">
+      <article class="panel">
+        <div class="panel-title"><span>03</span> MESSAGE FEED <em>volatile / last 50</em></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>TIME</th><th>DIR</th><th>PEER</th><th>TEXT</th><th>STATUS</th></tr></thead>
+            <tbody id="messages"></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-title"><span>04</span> EVENT LOG</div>
+        <div class="event-log" id="errors">
+          <p><time>--:--:--</time><span>SYS</span> waiting for events...</p>
+        </div>
+      </article>
+    </section>
+
+    <footer>
+      <span id="uptime">UPTIME --</span>
+      <span>LOCAL ACCESS ONLY · PORT 6190</span>
+    </footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

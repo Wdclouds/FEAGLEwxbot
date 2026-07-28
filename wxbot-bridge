@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+PROJECT_DIR="${FEAGLE_WXBOT_HOME:-$(dirname "$SCRIPT_PATH")}"
+COMPOSE=(docker compose --project-directory "$PROJECT_DIR" -f "$PROJECT_DIR/docker-compose.yml")
+
+usage() {
+  cat <<'EOF'
+FEAGLE WxBot Bridge
+
+Usage:
+  wxbot-bridge [setup|doctor|start|stop|restart|status|logs|help]
+EOF
+}
+
+run_start() {
+  "$PROJECT_DIR/scripts/doctor.sh"
+  "$PROJECT_DIR/scripts/fetch-astrbot.sh"
+  "${COMPOSE[@]}" up -d --build bot
+  "$PROJECT_DIR/scripts/wait-ready.sh"
+}
+
+run_action() {
+  case "${1:-menu}" in
+    setup) "$PROJECT_DIR/scripts/setup.sh" ;;
+    doctor) "$PROJECT_DIR/scripts/doctor.sh" ;;
+    start) run_start ;;
+    stop) "${COMPOSE[@]}" stop bot ;;
+    restart)
+      "${COMPOSE[@]}" restart bot
+      "$PROJECT_DIR/scripts/wait-ready.sh"
+      ;;
+    status)
+      "${COMPOSE[@]}" ps
+      if command -v curl >/dev/null 2>&1; then
+        curl -fsS "http://127.0.0.1:${DASHBOARD_HOST_PORT:-6190}/api/status" || true
+        printf '\n'
+      fi
+      ;;
+    logs) "${COMPOSE[@]}" logs -f --tail 200 bot ;;
+    help|-h|--help) usage ;;
+    *) usage; return 2 ;;
+  esac
+}
+
+if [[ $# -gt 0 ]]; then
+  run_action "$1"
+  exit
+fi
+
+while true; do
+  cat <<'EOF'
+
+FEAGLE WxBot Bridge
+1) 首次配置
+2) 环境检查
+3) 启动
+4) 停止
+5) 重启
+6) 状态
+7) 实时日志
+0) 退出
+EOF
+  read -r -p "请选择 [0-7]: " choice
+  case "$choice" in
+    1) run_action setup ;;
+    2) run_action doctor ;;
+    3) run_action start ;;
+    4) run_action stop ;;
+    5) run_action restart ;;
+    6) run_action status ;;
+    7) run_action logs ;;
+    0) exit 0 ;;
+    *) printf '无效选项。\n' ;;
+  esac
+done
