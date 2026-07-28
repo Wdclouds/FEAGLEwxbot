@@ -105,6 +105,25 @@ ssh \
 
 首次启动时，Dashboard 会显示微信登录二维码。扫码并在手机确认后，状态应依次变为 `ONLINE / HEALTHY`、AstrBot `READY`、OneBot `CONNECTED`。
 
+### Windows 后台隧道命令
+
+Windows 用户可以安装仓库附带的命令助手，SSH 地址只写入本机配置，不会提交到仓库：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install.ps1 `
+  -SshTarget root@your-server
+```
+
+重新打开 PowerShell 或 CMD 后使用：
+
+```powershell
+wxbot bridge start
+wxbot bridge status
+wxbot bridge exit
+```
+
+`start` 会通过 SSH 密钥在后台建立 Dashboard 与 AstrBot WebUI 隧道；`exit` 只会终止它自己记录的 SSH 进程，不会关闭其他 SSH 会话。PID 和本机日志保存在 `%LOCALAPPDATA%\FEAGLEwxbot\`，其中不保存 SSH 密码或私钥。
+
 Dashboard 提供三种管理员运行状态：
 
 - `RUNNING`：正常接收并回复消息。
