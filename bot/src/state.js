@@ -9,6 +9,8 @@ export class RuntimeState extends EventEmitter {
     this.startedAt = new Date().toISOString();
     this.wechat = {
       status: 'STARTING',
+      adminMode: 'RUNNING',
+      adminModeChangedAt: '',
       account: '',
       detail: '正在初始化 Wechat4u',
       qrDataUrl: '',

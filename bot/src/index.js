@@ -8,6 +8,10 @@ import { AstrBotSupervisor } from './astrbot-supervisor.js';
 import { MessageGuard } from './message-guard.js';
 import { FeishuNotifier } from './feishu-notifier.js';
 import { FeishuBindingClient, loadFeishuBinding } from './feishu-binding.js';
+import {
+  PersistentControlState,
+  WECHAT_ADMIN_MODES,
+} from './control-state.js';
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -23,6 +27,22 @@ function userIdSet(value) {
 }
 
 const state = new RuntimeState();
+const controlStore = new PersistentControlState({
+  path: process.env.BOT_CONTROL_STATE_PATH || '/app/data/control-state.json',
+});
+let savedControl = {
+  wechatAdminMode: WECHAT_ADMIN_MODES.RUNNING,
+  changedAt: '',
+};
+try {
+  savedControl = controlStore.load();
+} catch (error) {
+  state.addError('control-state-load', error);
+}
+state.patch('wechat', {
+  adminMode: savedControl.wechatAdminMode,
+  adminModeChangedAt: savedControl.changedAt,
+});
 const quietRange = parseQuietHours(process.env.BOT_QUIET_HOURS || '00:00-07:00');
 const timezone = process.env.BOT_TIMEZONE || 'Asia/Shanghai';
 let testMode = false;
@@ -73,6 +93,13 @@ const dashboard = new DashboardServer({
       throw error;
     }
   },
+  setWechatAdminMode: async (mode) => {
+    controlStore.save(mode);
+    if (mode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE) {
+      notifier.cancelReloginTest();
+    }
+    return wechat.setAdminMode(mode);
+  },
 });
 const idMap = new IdMap();
 const astrbot = new AstrBotSupervisor({ state });
@@ -98,6 +125,7 @@ wechat = new WechatClient({
     shutdown('WECHAT_WATCHDOG', 1);
   },
   onReloginOutcome: (outcome) => notifier.finishReloginTest(outcome),
+  initialAdminMode: savedControl.wechatAdminMode,
   onPrivateText: async (message) => onebot.sendPrivateText(message),
 });
 

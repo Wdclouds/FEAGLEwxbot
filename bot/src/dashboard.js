@@ -7,6 +7,7 @@ const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
 };
+const WECHAT_ADMIN_MODES = new Set(['RUNNING', 'PAUSED', 'MANUAL_OFFLINE']);
 
 export class DashboardServer {
   constructor({
@@ -16,6 +17,7 @@ export class DashboardServer {
     setTestMode = () => state.snapshot(),
     sendNotificationTest = async () => state.snapshot(),
     forceWechatRelogin = async () => state.snapshot(),
+    setWechatAdminMode = async () => state.snapshot(),
     publicRoot = '/app/src/public',
   }) {
     this.state = state;
@@ -24,6 +26,7 @@ export class DashboardServer {
     this.setTestMode = setTestMode;
     this.sendNotificationTest = sendNotificationTest;
     this.forceWechatRelogin = forceWechatRelogin;
+    this.setWechatAdminMode = setWechatAdminMode;
     this.clients = new Set();
     this.publicRoot = publicRoot;
     this.server = createServer((request, response) => {
@@ -151,6 +154,70 @@ export class DashboardServer {
       return;
     }
 
+    if (url.pathname === '/api/wechat/admin-mode') {
+      if (request.method !== 'POST') {
+        response.writeHead(405, {
+          Allow: 'POST',
+          'Content-Type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+      }
+      if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
+        response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+        return;
+      }
+
+      let body = '';
+      request.setEncoding('utf8');
+      request.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 1024) request.destroy();
+      });
+      request.on('end', () => {
+        let payload;
+        try {
+          payload = JSON.parse(body);
+        } catch {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Invalid JSON body' }));
+          return;
+        }
+        if (!WECHAT_ADMIN_MODES.has(payload.mode)) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Unsupported WeChat admin mode' }));
+          return;
+        }
+        if (
+          payload.mode === 'MANUAL_OFFLINE'
+          && payload.confirm !== 'MANUAL_OFFLINE'
+        ) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Explicit confirmation is required' }));
+          return;
+        }
+        Promise.resolve(this.setWechatAdminMode(payload.mode))
+          .then((snapshot) => {
+            response.writeHead(202, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify(snapshot));
+          })
+          .catch((error) => {
+            response.writeHead(409, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify({
+              error: String(error?.message || error).slice(0, 200),
+            }));
+          });
+      });
+      return;
+    }
+
     if (url.pathname === '/api/wechat/force-relogin') {
       if (request.method !== 'POST') {
         response.writeHead(405, {
@@ -198,6 +265,7 @@ export class DashboardServer {
             const conflict = [
               'WECHAT_RELOGIN_IN_PROGRESS',
               'WECHAT_NOT_HEALTHY',
+              'WECHAT_ADMIN_MODE_CONFLICT',
             ].includes(error?.code);
             response.writeHead(conflict ? 409 : 502, {
               'Content-Type': 'application/json; charset=utf-8',

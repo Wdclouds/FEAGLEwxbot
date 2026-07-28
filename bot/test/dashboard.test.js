@@ -136,3 +136,46 @@ test('dashboard force-relogin endpoint requires explicit confirmation', async (t
   const payload = await accepted.json();
   assert.equal(payload.wechat.reloginTestStatus, 'RUNNING');
 });
+
+test('dashboard persists an explicitly confirmed manual-offline mode', async (t) => {
+  const state = new RuntimeState();
+  const modes = [];
+  const dashboard = new DashboardServer({
+    state,
+    host: '127.0.0.1',
+    port: 0,
+    async setWechatAdminMode(mode) {
+      modes.push(mode);
+      state.patch('wechat', {
+        adminMode: mode,
+        status: mode,
+        protocolHealth: 'OFFLINE',
+      });
+      return state.snapshot();
+    },
+  });
+  await dashboard.start();
+  t.after(() => dashboard.stop());
+
+  const { port } = dashboard.server.address();
+  const rejected = await fetch(`http://127.0.0.1:${port}/api/wechat/admin-mode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'MANUAL_OFFLINE' }),
+  });
+  assert.equal(rejected.status, 400);
+  assert.equal(modes.length, 0);
+
+  const accepted = await fetch(`http://127.0.0.1:${port}/api/wechat/admin-mode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mode: 'MANUAL_OFFLINE',
+      confirm: 'MANUAL_OFFLINE',
+    }),
+  });
+  assert.equal(accepted.status, 202);
+  assert.deepEqual(modes, ['MANUAL_OFFLINE']);
+  const payload = await accepted.json();
+  assert.equal(payload.wechat.adminMode, 'MANUAL_OFFLINE');
+});

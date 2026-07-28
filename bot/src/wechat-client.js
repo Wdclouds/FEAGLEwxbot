@@ -13,6 +13,10 @@ import {
   isSessionInvalidError,
   isTransientWechatError,
 } from './managed-wechat.js';
+import {
+  WECHAT_ADMIN_MODES,
+  normalizeWechatAdminMode,
+} from './control-state.js';
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -41,6 +45,7 @@ export class WechatClient {
     messageGuard = null,
     onFatal = () => {},
     onReloginOutcome = () => {},
+    initialAdminMode = WECHAT_ADMIN_MODES.RUNNING,
     sessionPath = '/app/data/wechat/session.json',
     now = () => Date.now(),
     watchdogIntervalMs = positiveInteger(process.env.WECHAT_WATCHDOG_INTERVAL_MS, 15_000),
@@ -59,6 +64,7 @@ export class WechatClient {
     this.messageGuard = messageGuard;
     this.onFatal = onFatal;
     this.onReloginOutcome = onReloginOutcome;
+    this.adminMode = normalizeWechatAdminMode(initialAdminMode);
     this.sessionPath = sessionPath;
     this.now = now;
     this.watchdogIntervalMs = watchdogIntervalMs;
@@ -93,6 +99,19 @@ export class WechatClient {
   async start() {
     this.startWatchdog();
     mkdirSync(dirname(this.sessionPath), { recursive: true });
+    if (this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE) {
+      this.state.patch('wechat', {
+        status: 'MANUAL_OFFLINE',
+        adminMode: this.adminMode,
+        detail: '管理员已紧急离线，微信协议不会自动连接',
+        qrDataUrl: '',
+        qrCreatedAt: '',
+        protocolHealth: 'OFFLINE',
+        syncAgeMs: null,
+      });
+      return;
+    }
+    this.state.patch('wechat', { adminMode: this.adminMode });
     let session = null;
     if (existsSync(this.sessionPath)) {
       try {
@@ -185,7 +204,10 @@ export class WechatClient {
     const bot = this.bot;
 
     bot.on('uuid', async (uuid) => {
-      if (this.bot !== bot) return;
+      if (
+        this.bot !== bot
+        || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      ) return;
       const loginUrl = `https://login.weixin.qq.com/l/${uuid}`;
       try {
         const qrDataUrl = await QRCode.toDataURL(loginUrl, {
@@ -193,7 +215,11 @@ export class WechatClient {
           margin: 2,
           width: 360,
         });
-        if (this.bot !== bot || this.stopping) return;
+        if (
+          this.bot !== bot
+          || this.stopping
+          || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+        ) return;
         this.state.patch('wechat', {
           status: 'WAITING_SCAN',
           detail: '请使用微信扫描二维码',
@@ -209,7 +235,10 @@ export class WechatClient {
     });
 
     bot.on('user-avatar', () => {
-      if (this.bot !== bot) return;
+      if (
+        this.bot !== bot
+        || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      ) return;
       this.state.patch('wechat', {
         status: 'SCANNED',
         detail: '已扫码，请在手机确认登录',
@@ -217,7 +246,10 @@ export class WechatClient {
     });
 
     bot.on('login', () => {
-      if (this.bot !== bot) return;
+      if (
+        this.bot !== bot
+        || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      ) return;
       this.loggedIn = true;
       this.watchSession = true;
       this.loginStartedAt = this.now();
@@ -244,7 +276,11 @@ export class WechatClient {
     });
 
     bot.on('protocol-sync', ({ at }) => {
-      if (this.bot !== bot || this.stopping) return;
+      if (
+        this.bot !== bot
+        || this.stopping
+        || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      ) return;
       const recovered = this.state.wechat.protocolHealth !== 'HEALTHY';
       this.loggedIn = true;
       this.watchSession = true;
@@ -309,7 +345,11 @@ export class WechatClient {
     });
 
     bot.on('logout', () => {
-      if (this.bot !== bot || this.stopping) return;
+      if (
+        this.bot !== bot
+        || this.stopping
+        || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      ) return;
       this.lastProtocolError = 'Wechat4u 触发了未验证的 logout，已保留 Session';
       this.state.patch('wechat', {
         status: 'DEGRADED',
@@ -343,7 +383,11 @@ export class WechatClient {
   }
 
   handleInvalidSession(bot, error) {
-    if (this.bot !== bot || this.stopping) return;
+    if (
+      this.bot !== bot
+      || this.stopping
+      || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+    ) return;
     if (!this.sessionUsable && this.state.wechat.status === 'LOGGED_OUT') return;
     this.loggedIn = false;
     this.watchSession = false;
@@ -374,7 +418,12 @@ export class WechatClient {
   }
 
   async inspectProtocolHealth() {
-    if (this.stopping || !this.watchSession || !this.bot) return;
+    if (
+      this.stopping
+      || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      || !this.watchSession
+      || !this.bot
+    ) return;
 
     const now = this.now();
     const referenceTime = this.lastValidatedSyncTime || this.loginStartedAt;
@@ -432,7 +481,12 @@ export class WechatClient {
   }
 
   async recoverProtocol(targetBot) {
-    if (this.recoveryInFlight || this.stopping || targetBot !== this.bot) return;
+    if (
+      this.recoveryInFlight
+      || this.stopping
+      || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      || targetBot !== this.bot
+    ) return;
     this.recoveryInFlight = true;
     if (!this.recoveryWindowStartedAt) this.recoveryWindowStartedAt = this.now();
     const attempt = this.state.wechat.recoveryAttempts + 1;
@@ -523,7 +577,11 @@ export class WechatClient {
   }
 
   scheduleFreshLogin() {
-    if (this.stopping || this.loginRetryTimer) return;
+    if (
+      this.stopping
+      || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      || this.loginRetryTimer
+    ) return;
     this.loginRetryFailures += 1;
     const delay = Math.min(2_000 * (2 ** (this.loginRetryFailures - 1)), 60_000);
     this.state.patch('wechat', {
@@ -531,7 +589,10 @@ export class WechatClient {
     });
     this.loginRetryTimer = setTimeout(() => {
       this.loginRetryTimer = null;
-      if (this.stopping) return;
+      if (
+        this.stopping
+        || this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+      ) return;
       this.bot?.destroyLocal?.();
       this.createBot(null);
       void this.startFreshLogin(this.bot);
@@ -541,6 +602,11 @@ export class WechatClient {
 
   async forceReloginTest() {
     if (this.stopping) throw new Error('机器人正在停止，无法执行重登录测试');
+    if (this.adminMode !== WECHAT_ADMIN_MODES.RUNNING) {
+      const error = new Error('请先将机器人恢复为正常运行，再执行强制重登录测试');
+      error.code = 'WECHAT_ADMIN_MODE_CONFLICT';
+      throw error;
+    }
     if (this.manualReloginInFlight) {
       const error = new Error('强制重登录测试正在进行中');
       error.code = 'WECHAT_RELOGIN_IN_PROGRESS';
@@ -622,6 +688,120 @@ export class WechatClient {
     return this.state.snapshot();
   }
 
+  async setAdminMode(mode) {
+    const nextMode = normalizeWechatAdminMode(mode);
+    if (nextMode !== mode) {
+      throw new TypeError(`Unsupported WeChat admin mode: ${mode}`);
+    }
+    if (this.stopping) throw new Error('机器人正在停止，无法切换运行状态');
+    if (nextMode === this.adminMode) return this.state.snapshot();
+
+    const previousMode = this.adminMode;
+    this.adminMode = nextMode;
+    const changedAt = new Date(this.now()).toISOString();
+
+    if (nextMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE) {
+      return this.enterManualOffline(changedAt);
+    }
+
+    this.state.patch('wechat', {
+      adminMode: nextMode,
+      adminModeChangedAt: changedAt,
+    });
+
+    if (previousMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE) {
+      this.resetConnectionFlags();
+      this.state.patch('wechat', {
+        status: 'STARTING',
+        detail: '管理员已恢复运行，正在生成微信登录二维码',
+        qrDataUrl: '',
+        qrCreatedAt: '',
+        protocolHealth: 'STARTING',
+        lastSyncAt: '',
+        syncAgeMs: null,
+      });
+      this.createBot(null);
+      void this.startFreshLogin(this.bot);
+      return this.state.snapshot();
+    }
+
+    this.state.patch('wechat', {
+      detail: nextMode === WECHAT_ADMIN_MODES.PAUSED
+        ? '微信保持连接，管理员已暂停消息回复'
+        : '管理员已恢复消息处理',
+    });
+    return this.state.snapshot();
+  }
+
+  async enterManualOffline(changedAt = new Date(this.now()).toISOString()) {
+    if (this.loginRetryTimer) {
+      clearTimeout(this.loginRetryTimer);
+      this.loginRetryTimer = null;
+    }
+    const targetBot = this.bot;
+    this.manualReloginInFlight = false;
+    this.watchSession = false;
+    this.state.patch('wechat', {
+      status: 'LOGGING_OUT',
+      adminMode: WECHAT_ADMIN_MODES.MANUAL_OFFLINE,
+      adminModeChangedAt: changedAt,
+      detail: '正在执行管理员紧急离线',
+      qrDataUrl: '',
+      qrCreatedAt: '',
+      protocolHealth: 'OFFLINE',
+      syncAgeMs: null,
+      reloginTestStatus: 'IDLE',
+      reloginTestDetail: '',
+    });
+
+    if (targetBot && typeof targetBot.logout === 'function') {
+      try {
+        await withTimeout(
+          Promise.resolve(targetBot.logout()),
+          10_000,
+          '微信注销接口 10 秒内未响应',
+        );
+      } catch (error) {
+        this.state.addError('wechat-manual-offline', error);
+      }
+    }
+
+    targetBot?.destroyLocal?.();
+    if (this.bot === targetBot) this.bot = null;
+    this.resetConnectionFlags();
+    this.clearSession();
+    this.state.patch('wechat', {
+      status: 'MANUAL_OFFLINE',
+      adminMode: WECHAT_ADMIN_MODES.MANUAL_OFFLINE,
+      adminModeChangedAt: changedAt,
+      detail: '管理员已紧急离线；自动重连和二维码通知均已暂停',
+      qrDataUrl: '',
+      qrCreatedAt: '',
+      protocolHealth: 'OFFLINE',
+      lastSyncAt: '',
+      syncAgeMs: null,
+      consecutiveSyncErrors: 0,
+      lastDisconnectAt: changedAt,
+      lastDisconnectReason: 'Dashboard 管理员紧急离线',
+    });
+    return this.state.snapshot();
+  }
+
+  resetConnectionFlags() {
+    this.loggedIn = false;
+    this.watchSession = false;
+    this.sessionUsable = false;
+    this.selfId = null;
+    this.lastValidatedSyncTime = 0;
+    this.loginStartedAt = 0;
+    this.recoveryInFlight = false;
+    this.recoveryFailures = 0;
+    this.recoveryWindowStartedAt = 0;
+    this.nextRecoveryAt = 0;
+    this.firstSyncErrorAt = 0;
+    this.loginRetryFailures = 0;
+  }
+
   finishReloginTest(success, detail) {
     if (!this.manualReloginInFlight) return;
     this.manualReloginInFlight = false;
@@ -660,6 +840,16 @@ export class WechatClient {
     );
 
     this.state.increment('received');
+    if (this.adminMode === WECHAT_ADMIN_MODES.PAUSED) {
+      this.state.increment('dropped');
+      this.state.addMessage({
+        direction: 'IN',
+        peer: nickname,
+        text,
+        status: 'ADMIN-PAUSED',
+      });
+      return;
+    }
     if (this.isSleeping()) {
       this.state.increment('dropped');
       this.state.addMessage({
@@ -716,6 +906,9 @@ export class WechatClient {
 
   async sendText(onebotUserId, text) {
     if (!this.loggedIn) throw new Error('微信尚未登录');
+    if (this.adminMode !== WECHAT_ADMIN_MODES.RUNNING) {
+      throw new Error('管理员已暂停机器人回复');
+    }
     if (this.isSleeping()) throw new Error('机器人处于定时休眠时段');
     const protocolId = this.idMap.protocolId(onebotUserId, 'user');
     if (!protocolId) throw new Error(`未找到 OneBot 用户映射: ${onebotUserId}`);
@@ -760,5 +953,6 @@ export class WechatClient {
     if (this.loginRetryTimer) clearTimeout(this.loginRetryTimer);
     if (this.watchdogTimer) clearInterval(this.watchdogTimer);
     this.saveSession();
+    this.bot?.destroyLocal?.();
   }
 }

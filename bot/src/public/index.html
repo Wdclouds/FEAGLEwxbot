@@ -1,114 +1,199 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Feagle WxBot Console</title>
+  <meta name="color-scheme" content="dark light">
+  <title>Feagle WxBot 管理台 / Control Deck</title>
+  <script>
+    document.documentElement.dataset.theme =
+      localStorage.getItem('feagle-theme') ||
+      (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  </script>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="scanlines"></div>
+  <div class="ambient-grid" aria-hidden="true"></div>
   <main>
-    <header>
-      <div>
-        <p class="eyebrow">$ ssh feagle-wxbot@ecs</p>
-        <h1>WECHAT BOT <span>CONTROL DECK</span></h1>
+    <header class="topbar">
+      <div class="brand">
+        <p class="eyebrow">FEAGLE WXBOT · LOCAL CONTROL</p>
+        <h1>微信机器人管理台 <span>/ Control Deck</span></h1>
+        <p class="subtitle">连接、健康与消息流 / Connection, health & traffic</p>
       </div>
-      <div class="clock" id="clock">--:--:--</div>
+      <div class="header-tools">
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="切换主题">
+          <span id="theme-icon">☾</span>
+          <span id="theme-label">夜间 / Dark</span>
+        </button>
+        <div class="clock-card">
+          <small>本地时间 / LOCAL TIME</small>
+          <strong class="clock" id="clock">--:--:--</strong>
+        </div>
+      </div>
     </header>
 
     <section class="status-grid">
-      <article class="panel hero">
-        <div class="panel-title"><span>01</span> LOGIN TERMINAL</div>
+      <article class="panel login-panel">
+        <div class="panel-title">
+          <span class="section-number">01</span>
+          <div><strong>微信登录</strong><small>WECHAT LOGIN</small></div>
+          <span class="mode-badge" id="admin-mode-badge">运行中 / RUNNING</span>
+        </div>
         <div class="login-layout">
           <div class="qr-shell">
-            <img id="qr" alt="微信登录二维码">
+            <img id="qr" alt="微信登录二维码 / WeChat login QR code">
             <div id="qr-placeholder" class="qr-placeholder">
               <span class="pulse"></span>
-              <strong id="wechat-status">STARTING</strong>
-              <small id="wechat-detail">正在初始化</small>
+              <strong id="wechat-status">启动中 / STARTING</strong>
+              <small id="wechat-detail">正在初始化 / Initializing</small>
             </div>
           </div>
           <div class="login-copy">
-            <p class="label">ACCOUNT</p>
-            <p class="value" id="account">--</p>
-            <p class="label">SESSION</p>
-            <p class="value" id="session-status">STARTING</p>
-            <div class="protocol-health">
+            <div class="identity-row">
               <div>
-                <span>PROTOCOL SYNC</span>
-                <strong id="protocol-health">UNKNOWN</strong>
-                <small id="last-sync">LAST --</small>
+                <p class="label">微信账号 / ACCOUNT</p>
+                <p class="value" id="account">--</p>
               </div>
               <div>
-                <span>SELF HEAL</span>
-                <strong id="recovery-attempts">0</strong>
-                <small id="sync-errors">ERRORS 0</small>
+                <p class="label">会话状态 / SESSION</p>
+                <p class="value value-small" id="session-status">启动中 / STARTING</p>
               </div>
             </div>
-            <p class="hint" id="qr-time">等待协议状态...</p>
+            <p class="hint main-hint" id="qr-time">等待协议状态 / Waiting for protocol</p>
+            <div class="protocol-health">
+              <div>
+                <span>协议同步 / PROTOCOL</span>
+                <strong id="protocol-health">未知 / UNKNOWN</strong>
+                <small id="last-sync">上次同步 / LAST --</small>
+              </div>
+              <div>
+                <span>自动修复 / AUTO-HEAL</span>
+                <strong id="recovery-attempts">0</strong>
+                <small id="sync-errors">错误 / ERRORS 0</small>
+              </div>
+            </div>
           </div>
         </div>
       </article>
 
-      <article class="panel">
-        <div class="panel-title"><span>02</span> SERVICE MATRIX</div>
-        <div class="service" data-key="astrbot">
-          <i></i><b>ASTRBOT</b><span id="astrbot-status">STARTING</span>
+      <article class="panel control-panel">
+        <div class="panel-title">
+          <span class="section-number">02</span>
+          <div><strong>服务与控制</strong><small>SERVICES & CONTROL</small></div>
         </div>
-        <p id="astrbot-detail" class="service-detail">等待启动</p>
-        <div class="service" data-key="onebot">
-          <i></i><b>ONEBOT WS</b><span id="onebot-status">DISCONNECTED</span>
+
+        <div class="service-list">
+          <div class="service" data-key="astrbot">
+            <i></i><b>AstrBot <small>机器人框架 / ENGINE</small></b>
+            <span id="astrbot-status">启动中 / STARTING</span>
+          </div>
+          <p id="astrbot-detail" class="service-detail">等待启动 / Waiting</p>
+
+          <div class="service" data-key="onebot">
+            <i></i><b>OneBot WS <small>协议桥接 / BRIDGE</small></b>
+            <span id="onebot-status">未连接 / DISCONNECTED</span>
+          </div>
+          <p id="onebot-detail" class="service-detail">等待连接 / Waiting</p>
+
+          <div class="service" data-key="notifications">
+            <i></i><b>飞书通知 <small>FEISHU DM</small></b>
+            <span id="notifications-status">未启用 / DISABLED</span>
+          </div>
+          <p id="notifications-detail" class="service-detail">等待配置 / Waiting for config</p>
+
+          <div class="service" data-key="schedule">
+            <i></i><b>定时休眠 <small>SCHEDULE</small></b>
+            <span id="schedule-status">运行中 / ACTIVE</span>
+          </div>
+          <p class="service-detail"><span id="timezone">Asia/Shanghai</span> · <span id="quiet-hours">00:00-07:00</span></p>
         </div>
-        <p id="onebot-detail" class="service-detail">等待连接</p>
-        <div class="service" data-key="notifications">
-          <i></i><b>FEISHU DM</b><span id="notifications-status">DISABLED</span>
+
+        <div class="admin-control">
+          <div class="control-heading">
+            <strong>运行开关 / OPERATION</strong>
+            <small id="admin-mode-hint">正常接收并回复消息 / Processing messages</small>
+          </div>
+          <div class="button-row">
+            <button id="pause-toggle" class="button secondary" type="button">
+              暂停回复 / Pause
+            </button>
+            <button id="manual-offline-toggle" class="button danger" type="button">
+              紧急离线 / Offline
+            </button>
+          </div>
+          <p class="control-note" id="manual-offline-hint">
+            紧急离线会退出微信，并停止自动重连和二维码通知。
+            <span>Logs out WeChat and suppresses auto-heal & QR alerts.</span>
+          </p>
         </div>
-        <p id="notifications-detail" class="service-detail">WAITING CONFIG</p>
-        <div class="service" data-key="schedule">
-          <i></i><b>SCHEDULE</b><span id="schedule-status">ACTIVE</span>
-        </div>
-        <p class="service-detail"><span id="timezone">Asia/Shanghai</span> · <span id="quiet-hours">00:00-07:00</span></p>
-        <div class="test-mode-control">
-          <button id="test-mode-toggle" type="button" aria-pressed="false">
-            开启测试模式
-          </button>
-          <p id="test-mode-hint">开启后临时忽略休眠时段，再次点击即可恢复。</p>
-        </div>
-        <div class="test-mode-control notification-control">
-          <button id="notification-test" type="button">TEST FEISHU DM</button>
-          <p id="notification-test-hint">发送一条私聊测试通知，不会改变微信状态。</p>
-        </div>
-        <div class="test-mode-control force-relogin-control">
-          <button id="force-relogin-test" type="button">强制下线测试</button>
-          <p id="force-relogin-hint">会注销当前微信 Session，并通过飞书发送新二维码和登录结果。</p>
-        </div>
+
+        <details class="toolbox">
+          <summary>测试与维护 / TESTS & MAINTENANCE</summary>
+          <div class="toolbox-grid">
+            <div>
+              <button id="test-mode-toggle" class="button ghost" type="button" aria-pressed="false">
+                测试模式 / Test mode
+              </button>
+              <p id="test-mode-hint">临时忽略休眠时段 / Bypass quiet hours</p>
+            </div>
+            <div>
+              <button id="notification-test" class="button ghost blue" type="button">
+                测试飞书 / Test Feishu
+              </button>
+              <p id="notification-test-hint">发送私聊测试通知 / Send a DM test</p>
+            </div>
+            <div class="wide-tool">
+              <button id="force-relogin-test" class="button ghost danger" type="button">
+                强制重登测试 / Relogin test
+              </button>
+              <p id="force-relogin-hint">
+                注销 Session，推送一次二维码并反馈结果 / Logout, send one QR and report
+              </p>
+            </div>
+          </div>
+        </details>
       </article>
     </section>
 
-    <section class="metrics" id="metrics"></section>
+    <section class="metrics" id="metrics" aria-label="消息统计 / Message metrics"></section>
 
     <section class="lower-grid">
       <article class="panel">
-        <div class="panel-title"><span>03</span> MESSAGE FEED <em>volatile / last 50</em></div>
+        <div class="panel-title">
+          <span class="section-number">03</span>
+          <div><strong>消息概览</strong><small>MESSAGE FEED</small></div>
+          <em>仅内存 · 最近 50 条 / VOLATILE · LAST 50</em>
+        </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>TIME</th><th>DIR</th><th>PEER</th><th>TEXT</th><th>STATUS</th></tr></thead>
+            <thead>
+              <tr>
+                <th>时间<br><small>TIME</small></th>
+                <th>方向<br><small>DIR</small></th>
+                <th>联系人<br><small>PEER</small></th>
+                <th>内容<br><small>TEXT</small></th>
+                <th>状态<br><small>STATUS</small></th>
+              </tr>
+            </thead>
             <tbody id="messages"></tbody>
           </table>
         </div>
       </article>
       <article class="panel">
-        <div class="panel-title"><span>04</span> EVENT LOG</div>
+        <div class="panel-title">
+          <span class="section-number">04</span>
+          <div><strong>事件日志</strong><small>EVENT LOG</small></div>
+        </div>
         <div class="event-log" id="errors">
-          <p><time>--:--:--</time><span>SYS</span> waiting for events...</p>
+          <p><time>--:--:--</time><span>系统 / SYS</span>等待事件 / Waiting for events</p>
         </div>
       </article>
     </section>
 
     <footer>
-      <span id="uptime">UPTIME --</span>
-      <span>LOCAL ACCESS ONLY · PORT 6190</span>
+      <span id="uptime">运行时间 / UPTIME --</span>
+      <span>仅限本地访问 / LOCAL ACCESS ONLY · 6190</span>
     </footer>
   </main>
   <script src="/app.js"></script>

@@ -212,3 +212,80 @@ test('manual relogin reports a failed login attempt', async () => {
   assert.equal(state.notifications.lastType, 'LOGIN_FAILED');
   notifier.stop();
 });
+
+test('manual offline suppresses alerts and repeated login QR notifications', async () => {
+  const state = new RuntimeState();
+  const calls = [];
+  const notifier = configuredNotifier({
+    state,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      if (String(url).includes('/tenant_access_token/internal')) {
+        return jsonResponse({
+          code: 0,
+          tenant_access_token: 't-test',
+          expire: 7_200,
+        });
+      }
+      return jsonResponse({ code: 0, data: { message_id: 'om_test' } });
+    },
+  });
+  notifier.start();
+
+  state.patch('wechat', {
+    adminMode: 'MANUAL_OFFLINE',
+    status: 'MANUAL_OFFLINE',
+    protocolHealth: 'OFFLINE',
+    qrCreatedAt: '2026-07-28T00:00:00.000Z',
+    qrDataUrl: 'data:image/png;base64,aGVsbG8=',
+  });
+  await notifier.queue;
+
+  assert.equal(calls.length, 0);
+  assert.equal(notifier.incidentActive, false);
+  assert.equal(notifier.qrNotificationSentForIncident, false);
+  notifier.stop();
+});
+
+test('one login incident sends only one QR even when Wechat4u refreshes it', async () => {
+  const state = new RuntimeState();
+  const calls = [];
+  let now = 1_000;
+  const notifier = configuredNotifier({
+    state,
+    now: () => now,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      if (String(url).includes('/tenant_access_token/internal')) {
+        return jsonResponse({
+          code: 0,
+          tenant_access_token: 't-test',
+          expire: 7_200,
+        });
+      }
+      if (String(url).endsWith('/im/v1/images')) {
+        return jsonResponse({ code: 0, data: { image_key: 'img_test' } });
+      }
+      return jsonResponse({ code: 0, data: { message_id: 'om_test' } });
+    },
+  });
+  notifier.start();
+
+  state.patch('wechat', {
+    status: 'WAITING_SCAN',
+    protocolHealth: 'OFFLINE',
+    qrCreatedAt: '2026-07-28T00:00:00.000Z',
+    qrDataUrl: 'data:image/png;base64,aGVsbG8=',
+  });
+  await notifier.queue;
+  now += 20 * 60_000;
+  state.patch('wechat', {
+    qrCreatedAt: '2026-07-28T00:20:00.000Z',
+    qrDataUrl: 'data:image/png;base64,d29ybGQ=',
+  });
+  await notifier.queue;
+
+  assert.equal(calls.length, 4);
+  assert.equal(state.notifications.lastType, 'LOGIN_QR');
+  notifier.stop();
+});

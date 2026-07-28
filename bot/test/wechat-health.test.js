@@ -187,6 +187,65 @@ test('force relogin logs out, clears the saved session, and starts a fresh login
   assert.equal(client.sessionUsable, false);
 });
 
+test('manual offline logs out once and suppresses watchdog and fresh-login recovery', async () => {
+  const now = Date.parse('2026-07-28T03:00:00Z');
+  const { state, client } = createClient({ now: () => now });
+  let logoutCalls = 0;
+  let destroyCalls = 0;
+  let clearCalls = 0;
+  client.bot = {
+    async logout() {
+      logoutCalls += 1;
+    },
+    destroyLocal() {
+      destroyCalls += 1;
+    },
+  };
+  client.loggedIn = true;
+  client.watchSession = true;
+  client.sessionUsable = true;
+  client.selfId = 1_000_000_001;
+  client.clearSession = () => {
+    clearCalls += 1;
+  };
+
+  const snapshot = await client.setAdminMode('MANUAL_OFFLINE');
+  client.scheduleFreshLogin();
+  await client.inspectProtocolHealth();
+
+  assert.equal(logoutCalls, 1);
+  assert.equal(destroyCalls, 1);
+  assert.equal(clearCalls, 1);
+  assert.equal(client.bot, null);
+  assert.equal(client.watchSession, false);
+  assert.equal(client.loginRetryTimer, null);
+  assert.equal(snapshot.wechat.adminMode, 'MANUAL_OFFLINE');
+  assert.equal(snapshot.wechat.status, 'MANUAL_OFFLINE');
+  assert.equal(snapshot.wechat.protocolHealth, 'OFFLINE');
+});
+
+test('resuming from manual offline starts one fresh login', async () => {
+  const { state, client } = createClient({ initialAdminMode: 'MANUAL_OFFLINE' });
+  let freshLoginCalls = 0;
+  client.createBot = () => {
+    client.bot = {};
+  };
+  client.startFreshLogin = async () => {
+    freshLoginCalls += 1;
+  };
+  state.patch('wechat', {
+    adminMode: 'MANUAL_OFFLINE',
+    status: 'MANUAL_OFFLINE',
+    protocolHealth: 'OFFLINE',
+  });
+
+  const snapshot = await client.setAdminMode('RUNNING');
+
+  assert.equal(freshLoginCalls, 1);
+  assert.equal(snapshot.wechat.adminMode, 'RUNNING');
+  assert.equal(snapshot.wechat.status, 'STARTING');
+});
+
 test('a healthy protocol sync completes a running relogin test once', async () => {
   const now = Date.parse('2026-07-28T03:00:00Z');
   const outcomes = [];

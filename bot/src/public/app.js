@@ -1,12 +1,59 @@
 const $ = (id) => document.getElementById(id);
-const labels = {
-  received: 'RECEIVED',
-  forwarded: 'FORWARDED',
-  replied: 'REPLIED',
-  dropped: 'SLEEP DROP',
-  blocked: 'GUARD BLOCK',
-  failed: 'FAILED',
+
+const metricLabels = {
+  received: '已接收 / RECEIVED',
+  forwarded: '已转发 / FORWARDED',
+  replied: '已回复 / REPLIED',
+  dropped: '已丢弃 / DROPPED',
+  blocked: '已拦截 / BLOCKED',
+  failed: '失败 / FAILED',
 };
+
+const statusLabels = {
+  STARTING: '启动中 / STARTING',
+  RESTORING: '恢复中 / RESTORING',
+  WAITING_SCAN: '等待扫码 / WAITING SCAN',
+  SCANNED: '已扫码 / SCANNED',
+  ONLINE: '在线 / ONLINE',
+  CONNECTED: '已连接 / CONNECTED',
+  READY: '就绪 / READY',
+  RUNNING: '运行中 / RUNNING',
+  ACTIVE: '运行中 / ACTIVE',
+  TEST: '测试中 / TEST',
+  SLEEPING: '休眠中 / SLEEPING',
+  PAUSED: '暂停回复 / PAUSED',
+  MANUAL_OFFLINE: '紧急离线 / MANUAL OFFLINE',
+  LOGGING_OUT: '正在下线 / LOGGING OUT',
+  LOGGED_OUT: '已退出 / LOGGED OUT',
+  DISCONNECTED: '未连接 / DISCONNECTED',
+  DISABLED: '未启用 / DISABLED',
+  WAITING_BIND: '等待绑定 / WAITING BIND',
+  BOUND: '已绑定 / BOUND',
+  UNBOUND: '未绑定 / UNBOUND',
+  DEGRADED: '连接异常 / DEGRADED',
+  RECOVERING: '自动修复 / RECOVERING',
+  ERROR: '错误 / ERROR',
+  EXITED: '已退出 / EXITED',
+  UNKNOWN: '未知 / UNKNOWN',
+  HEALTHY: '健康 / HEALTHY',
+  STALE: '同步超时 / STALE',
+  FAILED: '失败 / FAILED',
+  OFFLINE: '离线 / OFFLINE',
+  SENDING: '发送中 / SENDING',
+};
+
+const messageStatusLabels = {
+  RECEIVED: '已接收 / RECEIVED',
+  SENT: '已发送 / SENT',
+  'SLEEP-DROP': '休眠丢弃 / SLEEP DROP',
+  'ADMIN-PAUSED': '暂停丢弃 / PAUSED',
+  'UPSTREAM-BUSY': '上游繁忙 / BUSY',
+  'FORWARD-FAILED': '转发失败 / FAILED',
+};
+
+function bilingualStatus(value) {
+  return statusLabels[value] || value || '--';
+}
 
 function time(value) {
   if (!value) return '--:--:--';
@@ -24,36 +71,79 @@ function duration(startedAt) {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  return `${days}d ${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m`;
+  return `${days}天 / d ${String(hours).padStart(2, '0')}时 / h ${String(minutes).padStart(2, '0')}分 / m`;
 }
 
 function setService(key, status, detail) {
-  $(`${key}-status`).textContent = status;
+  $(`${key}-status`).textContent = bilingualStatus(status);
   const detailNode = $(`${key}-detail`);
   if (detailNode) detailNode.textContent = detail || '';
   const service = document.querySelector(`.service[data-key="${key}"]`);
   const active = ['ONLINE', 'CONNECTED', 'READY', 'RUNNING', 'ACTIVE'].includes(status);
   const testing = status === 'TEST';
-  const bad = ['ERROR', 'EXITED', 'LOGGED_OUT'].includes(status);
-  const color = active ? 'var(--green)' : bad ? 'var(--red)' : testing ? 'var(--blue)' : 'var(--amber)';
+  const bad = ['ERROR', 'EXITED', 'LOGGED_OUT', 'MANUAL_OFFLINE'].includes(status);
+  const color = active
+    ? 'var(--accent)'
+    : bad
+      ? 'var(--red)'
+      : testing
+        ? 'var(--blue)'
+        : 'var(--amber)';
   service.querySelector('i').style.background = color;
   service.querySelector('span').style.color = color;
 }
 
+function renderAdminMode(state) {
+  const mode = state.wechat.adminMode || 'RUNNING';
+  const badge = $('admin-mode-badge');
+  const pauseButton = $('pause-toggle');
+  const offlineButton = $('manual-offline-toggle');
+  badge.dataset.mode = mode;
+  badge.textContent = bilingualStatus(mode);
+
+  if (mode === 'MANUAL_OFFLINE') {
+    $('admin-mode-hint').textContent = '微信与自动恢复已停止 / WeChat & auto-heal stopped';
+    pauseButton.disabled = true;
+    pauseButton.textContent = '暂停回复 / Pause';
+    offlineButton.textContent = '恢复运行 / Resume';
+    $('manual-offline-hint').innerHTML =
+      '当前不会自动重连或推送二维码。<span>No reconnect or QR alerts while manually offline.</span>';
+  } else if (mode === 'PAUSED') {
+    $('admin-mode-hint').textContent = '微信保持在线但不回复 / Connected without replies';
+    pauseButton.disabled = false;
+    pauseButton.textContent = '恢复回复 / Resume';
+    offlineButton.textContent = '紧急离线 / Offline';
+    $('manual-offline-hint').innerHTML =
+      '消息会被记录为暂停丢弃；连接与心跳仍保持。<span>Messages are dropped; session and heartbeat stay active.</span>';
+  } else {
+    $('admin-mode-hint').textContent = '正常接收并回复消息 / Processing messages';
+    pauseButton.disabled = false;
+    pauseButton.textContent = '暂停回复 / Pause';
+    offlineButton.textContent = '紧急离线 / Offline';
+    $('manual-offline-hint').innerHTML =
+      '紧急离线会退出微信，并停止自动重连和二维码通知。<span>Logs out WeChat and suppresses auto-heal & QR alerts.</span>';
+  }
+
+  pauseButton.dataset.mode = mode;
+  offlineButton.dataset.mode = mode;
+}
+
 function render(state) {
+  renderAdminMode(state);
   $('account').textContent = state.wechat.account || '--';
-  $('session-status').textContent = state.wechat.status;
-  $('protocol-health').textContent = state.wechat.protocolHealth || 'UNKNOWN';
+  $('session-status').textContent = bilingualStatus(state.wechat.status);
+  $('protocol-health').textContent = bilingualStatus(state.wechat.protocolHealth || 'UNKNOWN');
   $('protocol-health').dataset.status = state.wechat.protocolHealth || 'UNKNOWN';
   $('last-sync').textContent = state.wechat.lastSyncAt
-    ? `LAST ${time(state.wechat.lastSyncAt)} · ${Math.max(0, Math.round((state.wechat.syncAgeMs || 0) / 1000))}s`
-    : 'LAST --';
+    ? `上次 / LAST ${time(state.wechat.lastSyncAt)} · ${Math.max(0, Math.round((state.wechat.syncAgeMs || 0) / 1000))}s`
+    : '上次同步 / LAST --';
   $('recovery-attempts').textContent = state.wechat.recoveryAttempts || 0;
-  $('sync-errors').textContent = `ERRORS ${state.wechat.syncErrors || 0} · STREAK ${state.wechat.consecutiveSyncErrors || 0}`;
-  $('wechat-status').textContent = state.wechat.status;
+  $('sync-errors').textContent =
+    `错误 / ERRORS ${state.wechat.syncErrors || 0} · 连续 / STREAK ${state.wechat.consecutiveSyncErrors || 0}`;
+  $('wechat-status').textContent = bilingualStatus(state.wechat.status);
   $('wechat-detail').textContent = state.wechat.detail;
   $('qr-time').textContent = state.wechat.qrCreatedAt
-    ? `QR ISSUED ${time(state.wechat.qrCreatedAt)}`
+    ? `二维码生成 / QR ISSUED ${time(state.wechat.qrCreatedAt)}`
     : state.wechat.detail;
 
   const hasQr = Boolean(state.wechat.qrDataUrl);
@@ -65,46 +155,53 @@ function render(state) {
   setService(
     'onebot',
     state.onebot.status,
-    `${state.onebot.detail} · IN FLIGHT ${state.onebot.inFlight || 0}`,
+    `${state.onebot.detail} · 处理中 / IN FLIGHT ${state.onebot.inFlight || 0}`,
   );
   const notifications = state.notifications || {
     status: 'DISABLED',
-    detail: '飞书通知尚未配置',
+    detail: '飞书通知尚未配置 / Feishu is not configured',
   };
   setService('notifications', notifications.status, [
     notifications.detail,
-    notifications.lastSentAt ? `LAST ${time(notifications.lastSentAt)}` : '',
+    notifications.lastSentAt ? `上次 / LAST ${time(notifications.lastSentAt)}` : '',
   ].filter(Boolean).join(' · '));
   setService('schedule', state.schedule.mode);
   $('timezone').textContent = state.schedule.timezone;
   $('quiet-hours').textContent = state.schedule.quietHours;
+
   const testMode = Boolean(state.schedule.testMode);
   const testButton = $('test-mode-toggle');
   testButton.dataset.enabled = String(testMode);
   testButton.setAttribute('aria-pressed', String(testMode));
-  testButton.textContent = testMode ? '关闭测试模式' : '开启测试模式';
+  testButton.textContent = testMode
+    ? '关闭测试模式 / Disable'
+    : '测试模式 / Test mode';
   $('test-mode-hint').textContent = testMode
-    ? '测试模式已开启：当前不受休眠时段限制。'
-    : '开启后临时忽略休眠时段，再次点击即可恢复。';
+    ? '已忽略休眠时段 / Quiet hours bypassed'
+    : '临时忽略休眠时段 / Bypass quiet hours';
+
   const reloginStatus = state.wechat.reloginTestStatus || 'IDLE';
   const reloginButton = $('force-relogin-test');
   const reloginHint = $('force-relogin-hint');
   const reloginRunning = reloginStatus === 'RUNNING';
-  reloginButton.disabled = reloginRunning;
-  reloginButton.textContent = reloginRunning ? '等待重新登录...' : '强制下线测试';
+  reloginButton.disabled = reloginRunning || state.wechat.adminMode !== 'RUNNING';
+  reloginButton.textContent = reloginRunning
+    ? '等待重新登录 / Waiting...'
+    : '强制重登测试 / Relogin test';
   if (reloginRunning) {
-    reloginHint.textContent = state.wechat.reloginTestDetail || '二维码将发送到飞书私聊。';
+    reloginHint.textContent =
+      state.wechat.reloginTestDetail || '二维码将发送到飞书私聊 / QR will be sent once';
   } else if (reloginStatus === 'SUCCESS') {
-    reloginHint.textContent = `上次测试成功：${state.wechat.reloginTestDetail}`;
+    reloginHint.textContent = `上次成功 / Last success：${state.wechat.reloginTestDetail}`;
   } else if (reloginStatus === 'FAILED') {
-    reloginHint.textContent = `上次测试失败：${state.wechat.reloginTestDetail}`;
+    reloginHint.textContent = `上次失败 / Last failed：${state.wechat.reloginTestDetail}`;
   }
 
   $('metrics').replaceChildren(...Object.entries(state.counters).map(([key, value]) => {
     const article = document.createElement('article');
     article.className = 'metric';
     const small = document.createElement('small');
-    small.textContent = labels[key] || key.toUpperCase();
+    small.textContent = metricLabels[key] || key.toUpperCase();
     const strong = document.createElement('strong');
     strong.textContent = value;
     article.append(small, strong);
@@ -116,13 +213,15 @@ function render(state) {
     const cell = document.createElement('td');
     cell.colSpan = 5;
     cell.className = 'empty';
-    cell.textContent = 'NO MESSAGE TRAFFIC';
+    cell.textContent = '暂无消息流量 / NO MESSAGE TRAFFIC';
     row.append(cell);
     $('messages').replaceChildren(row);
   } else {
     $('messages').replaceChildren(...state.messages.map((message) => {
       const row = document.createElement('tr');
-      [time(message.time), message.direction, message.peer, message.text, message.status]
+      const direction = message.direction === 'IN' ? '接收 / IN' : '发送 / OUT';
+      const messageStatus = messageStatusLabels[message.status] || message.status;
+      [time(message.time), direction, message.peer, message.text, messageStatus]
         .forEach((value, index) => {
           const cell = document.createElement('td');
           cell.textContent = value;
@@ -138,8 +237,8 @@ function render(state) {
     const t = document.createElement('time');
     t.textContent = time(state.now);
     const source = document.createElement('span');
-    source.textContent = 'SYS';
-    p.append(t, source, ' no errors recorded');
+    source.textContent = '系统 / SYS';
+    p.append(t, source, '没有错误记录 / No errors recorded');
     $('errors').replaceChildren(p);
   } else {
     $('errors').replaceChildren(...state.errors.map((error) => {
@@ -152,16 +251,79 @@ function render(state) {
       return p;
     }));
   }
-  $('uptime').textContent = `UPTIME ${duration(state.startedAt)}`;
+  $('uptime').textContent = `运行时间 / UPTIME ${duration(state.startedAt)}`;
+}
+
+function setTheme(theme) {
+  const normalized = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = normalized;
+  localStorage.setItem('feagle-theme', normalized);
+  $('theme-icon').textContent = normalized === 'light' ? '☀' : '☾';
+  $('theme-label').textContent = normalized === 'light'
+    ? '白天 / Light'
+    : '夜间 / Dark';
+}
+
+async function setAdminMode(mode) {
+  const response = await fetch('/api/wechat/admin-mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mode,
+      confirm: mode === 'MANUAL_OFFLINE' ? 'MANUAL_OFFLINE' : undefined,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || '状态切换失败 / State change failed');
+  render(payload);
 }
 
 setInterval(() => {
   $('clock').textContent = time(new Date());
 }, 1000);
 
+setTheme(document.documentElement.dataset.theme);
 fetch('/api/status').then((response) => response.json()).then(render);
 const events = new EventSource('/events');
 events.onmessage = (event) => render(JSON.parse(event.data));
+
+$('theme-toggle').addEventListener('click', () => {
+  setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+});
+
+$('pause-toggle').addEventListener('click', async () => {
+  const button = $('pause-toggle');
+  const currentMode = button.dataset.mode || 'RUNNING';
+  button.disabled = true;
+  try {
+    await setAdminMode(currentMode === 'PAUSED' ? 'RUNNING' : 'PAUSED');
+  } catch (error) {
+    $('manual-offline-hint').textContent = `切换失败 / Failed：${error.message}`;
+  } finally {
+    if (button.dataset.mode !== 'MANUAL_OFFLINE') button.disabled = false;
+  }
+});
+
+$('manual-offline-toggle').addEventListener('click', async () => {
+  const button = $('manual-offline-toggle');
+  const currentMode = button.dataset.mode || 'RUNNING';
+  const nextMode = currentMode === 'MANUAL_OFFLINE' ? 'RUNNING' : 'MANUAL_OFFLINE';
+  if (
+    nextMode === 'MANUAL_OFFLINE'
+    && !window.confirm(
+      '紧急离线会注销当前微信 Session，并停止自动重连和飞书二维码通知。恢复时需要重新扫码。\n\nEmergency offline logs out WeChat and suppresses reconnect/QR alerts. A new scan is required to resume.\n\n确认继续 / Continue?',
+    )
+  ) return;
+
+  button.disabled = true;
+  try {
+    await setAdminMode(nextMode);
+  } catch (error) {
+    $('manual-offline-hint').textContent = `切换失败 / Failed：${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $('test-mode-toggle').addEventListener('click', async () => {
   const button = $('test-mode-toggle');
@@ -174,10 +336,10 @@ $('test-mode-toggle').addEventListener('click', async () => {
       body: JSON.stringify({ enabled: !enabled }),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '切换失败');
+    if (!response.ok) throw new Error(payload.error || '切换失败 / Toggle failed');
     render(payload);
   } catch (error) {
-    $('test-mode-hint').textContent = `切换失败：${error.message}`;
+    $('test-mode-hint').textContent = `切换失败 / Failed：${error.message}`;
   } finally {
     button.disabled = false;
   }
@@ -187,15 +349,15 @@ $('notification-test').addEventListener('click', async () => {
   const button = $('notification-test');
   const hint = $('notification-test-hint');
   button.disabled = true;
-  hint.textContent = '正在发送飞书私聊测试通知...';
+  hint.textContent = '正在发送 / Sending...';
   try {
     const response = await fetch('/api/notifications/test', { method: 'POST' });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '发送失败');
+    if (!response.ok) throw new Error(payload.error || '发送失败 / Send failed');
     render(payload);
-    hint.textContent = '测试通知已发送，请检查飞书私聊。';
+    hint.textContent = '已发送，请检查飞书 / Sent, check Feishu';
   } catch (error) {
-    hint.textContent = `发送失败：${error.message}`;
+    hint.textContent = `发送失败 / Failed：${error.message}`;
   } finally {
     button.disabled = false;
   }
@@ -205,12 +367,12 @@ $('force-relogin-test').addEventListener('click', async () => {
   const button = $('force-relogin-test');
   const hint = $('force-relogin-hint');
   const confirmed = window.confirm(
-    '该操作会立即注销当前微信 Session，必须重新扫码登录。确认开始测试吗？',
+    '该测试会注销当前微信 Session，推送一次二维码并等待重新登录。\n\nThis test logs out WeChat, sends one QR and waits for login.\n\n确认开始 / Start test?',
   );
   if (!confirmed) return;
 
   button.disabled = true;
-  hint.textContent = '正在注销微信并申请新的登录二维码...';
+  hint.textContent = '正在注销并生成二维码 / Logging out and generating QR...';
   try {
     const response = await fetch('/api/wechat/force-relogin', {
       method: 'POST',
@@ -218,10 +380,10 @@ $('force-relogin-test').addEventListener('click', async () => {
       body: JSON.stringify({ confirm: 'FORCE_LOGOUT' }),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '强制下线测试启动失败');
+    if (!response.ok) throw new Error(payload.error || '测试启动失败 / Test failed');
     render(payload);
   } catch (error) {
-    hint.textContent = `启动失败：${error.message}`;
+    hint.textContent = `启动失败 / Failed：${error.message}`;
     button.disabled = false;
   }
 });

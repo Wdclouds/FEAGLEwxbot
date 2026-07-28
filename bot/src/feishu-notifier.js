@@ -79,6 +79,7 @@ export class FeishuNotifier {
     this.previousProtocolHealth = null;
     this.lastQrCreatedAt = '';
     this.lastQrNotifiedAt = 0;
+    this.qrNotificationSentForIncident = false;
     this.manualReloginActive = false;
     this.onSnapshot = (snapshot) => this.observe(snapshot);
   }
@@ -107,6 +108,7 @@ export class FeishuNotifier {
     });
     if (
       this.enabled
+      && snapshot.wechat.adminMode !== 'MANUAL_OFFLINE'
       && snapshot.wechat.qrDataUrl
       && snapshot.wechat.qrCreatedAt
     ) {
@@ -136,7 +138,11 @@ export class FeishuNotifier {
         detail: `飞书私聊通知已绑定（${normalizedType}）`,
       });
       const snapshot = this.state.snapshot();
-      if (snapshot.wechat.qrDataUrl && snapshot.wechat.qrCreatedAt) {
+      if (
+        snapshot.wechat.adminMode !== 'MANUAL_OFFLINE'
+        && snapshot.wechat.qrDataUrl
+        && snapshot.wechat.qrCreatedAt
+      ) {
         this.queueQrNotification(snapshot);
       }
     }
@@ -149,7 +155,19 @@ export class FeishuNotifier {
       protocolHealth,
       qrDataUrl,
       qrCreatedAt,
+      adminMode,
     } = snapshot.wechat;
+
+    if (adminMode === 'MANUAL_OFFLINE') {
+      this.incidentActive = false;
+      this.manualReloginActive = false;
+      this.lastQrCreatedAt = '';
+      this.lastQrNotifiedAt = 0;
+      this.qrNotificationSentForIncident = false;
+      this.previousWechatStatus = status;
+      this.previousProtocolHealth = protocolHealth;
+      return;
+    }
 
     const newlyUnavailable = (
       ['DEGRADED', 'ERROR', 'LOGGED_OUT'].includes(status)
@@ -161,6 +179,7 @@ export class FeishuNotifier {
 
     if (newlyUnavailable && !this.incidentActive && !this.manualReloginActive) {
       this.incidentActive = true;
+      this.qrNotificationSentForIncident = false;
       void this.enqueue('ALERT', () => this.sendText(
         `⚠️ Feagle WxBot 微信连接异常\n状态：${status} / ${protocolHealth}\n系统正在自动恢复；若 Session 失效，稍后会发送登录二维码。`,
       )).catch(() => {});
@@ -181,6 +200,7 @@ export class FeishuNotifier {
       && !this.manualReloginActive
     ) {
       this.incidentActive = false;
+      this.qrNotificationSentForIncident = false;
       void this.enqueue('RECOVERED', () => this.sendText(
         '✅ Feagle WxBot 微信连接已恢复，协议同步正常。',
       )).catch(() => {});
@@ -191,12 +211,15 @@ export class FeishuNotifier {
   }
 
   queueQrNotification(snapshot) {
+    if (snapshot.wechat.adminMode === 'MANUAL_OFFLINE') return;
     this.lastQrCreatedAt = snapshot.wechat.qrCreatedAt;
+    if (this.qrNotificationSentForIncident) return;
     if (
       this.lastQrNotifiedAt
       && this.now() - this.lastQrNotifiedAt < this.qrCooldownMs
     ) return;
     this.lastQrNotifiedAt = this.now();
+    this.qrNotificationSentForIncident = true;
     this.incidentActive = true;
     const qrDataUrl = snapshot.wechat.qrDataUrl;
     void this.enqueue('LOGIN_QR', async () => {
@@ -206,6 +229,7 @@ export class FeishuNotifier {
       await this.sendImage(qrDataUrl);
     }).catch(() => {
       this.lastQrNotifiedAt = 0;
+      this.qrNotificationSentForIncident = false;
     });
   }
 
@@ -263,11 +287,13 @@ export class FeishuNotifier {
     this.incidentActive = true;
     this.lastQrCreatedAt = '';
     this.lastQrNotifiedAt = 0;
+    this.qrNotificationSentForIncident = false;
   }
 
   cancelReloginTest() {
     this.manualReloginActive = false;
     this.incidentActive = false;
+    this.qrNotificationSentForIncident = false;
   }
 
   finishReloginTest({ success, account = '', detail = '' }) {
@@ -277,7 +303,7 @@ export class FeishuNotifier {
     const type = success ? 'LOGIN_SUCCESS' : 'LOGIN_FAILED';
     const text = success
       ? `✅ Feagle WxBot 强制重登录测试成功\n微信账号：${account || 'WeChat'}\n协议同步：HEALTHY`
-      : `❌ Feagle WxBot 强制重登录测试失败\n原因：${detail || '未知错误'}\n系统将继续自动生成新的登录二维码。`;
+      : `❌ Feagle WxBot 强制重登录测试失败\n原因：${detail || '未知错误'}\n系统会继续等待登录；同一轮登录不会重复推送二维码。`;
     return this.enqueue(type, () => this.sendText(text));
   }
 
