@@ -43,6 +43,6 @@ RUN python3 -m venv /app/.venv \
 
 COPY src ./src
 
-EXPOSE 6185 6190
+EXPOSE 6185 6190 6191
 
 CMD ["npm", "start"]

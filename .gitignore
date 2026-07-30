@@ -14,10 +14,15 @@ bot/AstrBot/
 # Dependencies and build output
 node_modules/
 bot/node_modules/
+bot/.smoke-status.json
 __pycache__/
 *.py[cod]
 coverage/
 dist/
+android/.gradle/
+android/**/build/
+android/local.properties
+*.apk
 *.log
 npm-debug.log*
 
@@ -28,6 +33,8 @@ Thumbs.db
 .vscode/
 
 # Local overrides and archives
+.tools/
+frida/
 compose.override.yml
 docker-compose.override.yml
 backups/
