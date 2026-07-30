@@ -27,6 +27,8 @@ export class IdMap {
         event_json TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      CREATE INDEX IF NOT EXISTS idx_messages_wechat_id
+        ON messages(wechat_message_id);
       CREATE TABLE IF NOT EXISTS message_receipts (
         wechat_message_id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,
@@ -102,11 +104,21 @@ export class IdMap {
   }
 
   storeMessage(wechatMessageId, event) {
+    const normalizedMessageId = String(wechatMessageId || '');
+    if (normalizedMessageId) {
+      const existing = this.db.prepare(
+        'SELECT onebot_message_id FROM messages WHERE wechat_message_id = ? ORDER BY onebot_message_id LIMIT 1',
+      ).get(normalizedMessageId);
+      if (existing) {
+        this.updateMessage(existing.onebot_message_id, event);
+        return Number(existing.onebot_message_id);
+      }
+    }
     const result = this.db.prepare(`
       INSERT INTO messages (wechat_message_id, event_json, created_at)
       VALUES (?, ?, ?)
     `).run(
-      String(wechatMessageId || ''),
+      normalizedMessageId,
       JSON.stringify(event),
       new Date().toISOString(),
     );
@@ -146,6 +158,26 @@ export class IdMap {
       SET status = ?, updated_at = ?
       WHERE wechat_message_id = ?
     `).run(String(status || 'UNKNOWN'), new Date().toISOString(), messageId);
+  }
+
+  messageReceipt(wechatMessageId) {
+    const messageId = String(wechatMessageId || '').trim();
+    if (!messageId) return null;
+    return this.db.prepare(`
+      SELECT wechat_message_id, kind, status, created_at, updated_at
+      FROM message_receipts
+      WHERE wechat_message_id = ?
+    `).get(messageId) || null;
+  }
+
+  releaseMessageReceipt(wechatMessageId) {
+    const messageId = String(wechatMessageId || '').trim();
+    if (!messageId) return false;
+    const result = this.db.prepare(`
+      DELETE FROM message_receipts
+      WHERE wechat_message_id = ? AND status = 'RECEIVED'
+    `).run(messageId);
+    return Number(result.changes) === 1;
   }
 
   pruneMessageReceipts(retentionMs = 7 * 24 * 60 * 60_000) {

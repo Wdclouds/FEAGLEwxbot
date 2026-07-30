@@ -151,6 +151,25 @@ Dashboard 提供三种管理员运行状态：
 
 所有阈值都可通过 `.env` 调整。Dashboard 切换到 `MENTION_ONLY` 时仍要求二次确认。
 
+## 可选 Android Agent 接入
+
+项目支持把底层微信连接从 Wechat4u 切换为 Android Agent，Bridge、
+OneBot、AstrBot、模型、限流、休眠时段和持久化 ID 映射继续复用：
+
+```text
+Wechat4u ───────┐
+                ├─→ FEAGLE Bridge → OneBot v11 → AstrBot
+Android Agent ──┘
+```
+
+两个 transport 是并列选择，不应同时消费同一账号。当前已验证的 Android 主链路
+锁定微信 `8.0.70`，由版本化 Hook 适配器捕获私聊文本并通过 Binder 交给独立
+Agent；系统通知适配器保留为受限兜底。Agent 持久队列、WebSocket ACK 和服务器
+SQLite 收据共同避免断线重放。远程传输可选择标准 WSS，或只绑定 Tailscale 私网。
+
+详细的构建、Token、WSS 反向代理和切换方式见
+[Android Agent 文档](./android/README.md)。
+
 ## 飞书私聊通知
 
 飞书通知是可选功能。需要创建企业自建应用并配置：

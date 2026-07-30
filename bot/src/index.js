@@ -3,6 +3,7 @@ import { DashboardServer } from './dashboard.js';
 import { IdMap } from './id-map.js';
 import { parseQuietHours, isQuietTime } from './quiet-hours.js';
 import { WechatClient } from './wechat-client.js';
+import { AndroidWechatClient } from './android-client.js';
 import { OneBotClient } from './onebot-client.js';
 import { AstrBotSupervisor } from './astrbot-supervisor.js';
 import { MessageGuard } from './message-guard.js';
@@ -142,24 +143,36 @@ const messageGuard = new MessageGuard({
 });
 
 let onebot;
-wechat = new WechatClient({
+const transport = String(process.env.WECHAT_TRANSPORT || 'wechat4u')
+  .trim()
+  .toLocaleLowerCase();
+const commonWechatOptions = {
   state,
   idMap,
   isSleeping: sleeping,
   messageGuard,
-  onFatal: (error) => {
-    state.addError('wechat-fatal', error);
-    shutdown('WECHAT_WATCHDOG', 1);
-  },
-  onReloginOutcome: (outcome) => notifier.finishReloginTest(outcome),
   initialAdminMode: savedControl.wechatAdminMode,
-  initialGroupChatMode: savedControl.groupChatMode,
-  initialGroupAllowlist: savedControl.groupAllowlist,
-  initialGroupBlockedTerms: savedControl.groupBlockedTerms,
-  groupSafety,
   onPrivateText: async (message) => onebot.sendPrivateText(message),
-  onGroupText: async (message) => onebot.sendGroupText(message),
-});
+};
+if (transport === 'android') {
+  wechat = new AndroidWechatClient(commonWechatOptions);
+} else if (transport === 'wechat4u') {
+  wechat = new WechatClient({
+    ...commonWechatOptions,
+    onFatal: (error) => {
+      state.addError('wechat-fatal', error);
+      shutdown('WECHAT_WATCHDOG', 1);
+    },
+    onReloginOutcome: (outcome) => notifier.finishReloginTest(outcome),
+    initialGroupChatMode: savedControl.groupChatMode,
+    initialGroupAllowlist: savedControl.groupAllowlist,
+    initialGroupBlockedTerms: savedControl.groupBlockedTerms,
+    groupSafety,
+    onGroupText: async (message) => onebot.sendGroupText(message),
+  });
+} else {
+  throw new Error(`Unsupported WECHAT_TRANSPORT: ${transport}`);
+}
 
 onebot = new OneBotClient({
   state,
