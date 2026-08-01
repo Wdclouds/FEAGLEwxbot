@@ -3,6 +3,27 @@ set -Eeuo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_PATH="$PROJECT_DIR/.env"
+temporary_env=
+feishu_temp_dir=
+
+cleanup_setup() {
+  if [[ -n "$feishu_temp_dir" ]]; then
+    case "$feishu_temp_dir" in
+      /tmp/*) rm -rf -- "$feishu_temp_dir" ;;
+      *) printf '拒绝清理异常飞书临时目录：%s\n' "$feishu_temp_dir" >&2 ;;
+    esac
+  fi
+  if [[ -n "$temporary_env" && "$temporary_env" == "${ENV_PATH}.tmp" ]]; then
+    rm -f -- "$temporary_env"
+  fi
+}
+trap cleanup_setup EXIT
+
+env_value() {
+  local key="$1"
+  [[ -f "$ENV_PATH" ]] || return 0
+  sed -n "s/^${key}=//p" "$ENV_PATH" | tail -n 1
+}
 
 prompt_default() {
   local prompt="$1"
@@ -18,6 +39,32 @@ prompt_secret() {
   read -r -s -p "$prompt: " value
   printf '\n' >&2
   printf '%s' "$value"
+}
+
+prompt_required() {
+  local prompt="$1"
+  local value
+  while true; do
+    read -r -p "$prompt: " value
+    if [[ -n "$value" ]]; then
+      printf '%s' "$value"
+      return
+    fi
+    printf '该项不能为空，请重新输入。\n' >&2
+  done
+}
+
+prompt_required_secret() {
+  local prompt="$1"
+  local value
+  while true; do
+    value="$(prompt_secret "$prompt（输入不会回显，粘贴后按 Enter）")"
+    if [[ -n "$value" ]]; then
+      printf '%s' "$value"
+      return
+    fi
+    printf '该项不能为空，请重新输入。\n' >&2
+  done
 }
 
 valid_port() {
@@ -39,6 +86,77 @@ generate_bridge_secret() {
   printf '无法安全生成 Android Bridge 密钥，请安装 openssl 后重试。\n' >&2
   exit 1
 }
+
+verify_feishu_credentials() {
+  local app_id="$1"
+  local app_secret="$2"
+  local response
+  if [[ ! "$app_id" =~ ^cli_[A-Za-z0-9_-]+$ ]]; then
+    printf '飞书 App ID 格式无效，应以 cli_ 开头。\n' >&2
+    return 1
+  fi
+  if [[ ! "$app_secret" =~ ^[A-Za-z0-9_-]{8,}$ ]]; then
+    printf '飞书 App Secret 格式或长度无效。\n' >&2
+    return 1
+  fi
+  printf '正在连接飞书开放平台...'
+  if ! response="$(
+    printf '{"app_id":"%s","app_secret":"%s"}' "$app_id" "$app_secret" \
+      | curl --silent --show-error --fail-with-body \
+        --connect-timeout 15 --max-time 30 \
+        --header 'Content-Type: application/json; charset=utf-8' \
+        --data-binary @- \
+        https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/
+  )"; then
+    printf '失败。\n' >&2
+    return 1
+  fi
+  if ! grep -Eq '"code"[[:space:]]*:[[:space:]]*0' <<<"$response"; then
+    printf '失败：凭据无效、应用未启用或飞书暂时不可用。\n' >&2
+    return 1
+  fi
+  printf '完成。\n'
+}
+
+configure_feishu_credentials() {
+  local method_choice
+  local credentials_file
+  local helper
+  printf '\n飞书 / Lark 配置方式：\n'
+  printf '  1) 扫码自动创建应用，或在授权页选择已有应用（推荐）\n'
+  printf '  2) 手动输入已有 App ID 和 App Secret\n'
+  read -r -p "请选择 [1-2，默认 1]: " method_choice
+  case "$method_choice" in
+    1|"")
+      feishu_temp_dir="$(mktemp -d)"
+      credentials_file="$feishu_temp_dir/credentials.env"
+      helper="${FEAGLE_FEISHU_REGISTER_HELPER:-$PROJECT_DIR/scripts/feishu-register.sh}"
+      if ! bash "$helper" "$credentials_file"; then
+        printf '飞书扫码配置未完成；现有 .env 未被覆盖，请重新运行向导或选择手动输入。\n' >&2
+        exit 1
+      fi
+      feishu_app_id="$(sed -n 's/^FEISHU_APP_ID=//p' "$credentials_file" | tail -n 1)"
+      feishu_app_secret="$(sed -n 's/^FEISHU_APP_SECRET=//p' "$credentials_file" | tail -n 1)"
+      rm -rf -- "$feishu_temp_dir"
+      feishu_temp_dir=
+      ;;
+    2)
+      feishu_app_id="$(prompt_required '飞书 App ID（输入会正常显示）')"
+      feishu_app_secret="$(prompt_required_secret '飞书 App Secret')"
+      ;;
+    *)
+      printf '无效选项。\n' >&2
+      exit 2
+      ;;
+  esac
+  if ! verify_feishu_credentials "$feishu_app_id" "$feishu_app_secret"; then
+    printf '飞书配置未保存，请检查后重新运行向导。\n' >&2
+    exit 1
+  fi
+}
+
+existing_feishu_app_id="$(env_value FEISHU_APP_ID)"
+existing_feishu_app_secret="$(env_value FEISHU_APP_SECRET)"
 
 if [[ -f "$ENV_PATH" ]]; then
   read -r -p ".env 已存在，是否重新配置？现有文件会备份 [y/N]: " overwrite
@@ -163,12 +281,23 @@ if [[ "$wechat_transport" == android \
   exit 2
 fi
 
-read -r -p "是否配置飞书私聊通知？[y/N]: " configure_feishu
-feishu_app_id=
-feishu_app_secret=
-if [[ "$configure_feishu" =~ ^[Yy]$ ]]; then
-  feishu_app_id="$(prompt_secret "飞书 App ID（输入不会回显）")"
-  feishu_app_secret="$(prompt_secret "飞书 App Secret（输入不会回显）")"
+feishu_app_id="$existing_feishu_app_id"
+feishu_app_secret="$existing_feishu_app_secret"
+if [[ -n "$feishu_app_id" && -n "$feishu_app_secret" ]]; then
+  printf '\n✓ 飞书 / Lark 已配置。\n'
+  read -r -p "是否重新配置飞书 / Lark？[y/N]: " configure_feishu
+  if [[ "$configure_feishu" =~ ^[Yy]$ ]]; then
+    configure_feishu_credentials
+  else
+    printf '保留现有飞书配置。\n'
+  fi
+else
+  feishu_app_id=
+  feishu_app_secret=
+  read -r -p "是否配置飞书 / Lark 私聊通知？[y/N]: " configure_feishu
+  if [[ "$configure_feishu" =~ ^[Yy]$ ]]; then
+    configure_feishu_credentials
+  fi
 fi
 
 umask 077
@@ -237,6 +366,7 @@ WECHAT_MAX_RECOVERY_FAILURES=3
 WECHAT_FATAL_AFTER_MS=600000
 EOF
 mv "$temporary_env" "$ENV_PATH"
+temporary_env=
 chmod 600 "$ENV_PATH"
 mkdir -p "$PROJECT_DIR/data"
 chmod 700 "$PROJECT_DIR/data"

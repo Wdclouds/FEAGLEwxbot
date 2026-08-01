@@ -54,8 +54,9 @@ chmod +x wxbot-bridge scripts/*.sh
 `https://ghfast.top/` 前缀删除即可使用 GitHub 官方地址。
 
 配置向导会检查环境，让用户选择 Wechat4u 或 Android Agent，询问模型与休眠时段、
-生成本机 `.env`，然后下载固定版本的 AstrBot 并启动机器人。Android 模式会自动
-生成不回显的配对密钥，并引导继续使用 Android Kit。
+生成本机 `.env`，然后下载固定版本的 AstrBot 并启动机器人。飞书通知可通过官方
+二维码自动创建或关联已有应用，也可手动填写凭据。Android 模式会自动生成不回显的
+配对密钥，并引导继续使用 Android Kit。
 
 完整步骤、首次扫码和 SSH 隧道说明见
 [操作步骤说明书](./docs/user-guide.md)。
@@ -83,6 +84,7 @@ Dashboard 和 AstrBot WebUI 默认只绑定服务器回环地址，不直接暴�
 
 应通过 SSH 隧道访问，通常不需要为这两个端口开放云安全组。具体命令见
 [操作步骤说明书：访问管理页面](./docs/user-guide.md#6-访问管理页面)。
+`start` 成功后也会直接打印可复制的隧道命令；该命令必须在浏览器所在的电脑运行。
 
 ## 隐私提醒
 
