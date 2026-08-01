@@ -177,6 +177,12 @@ cat >"$temporary_env" <<EOF
 TZ=$timezone
 BOT_TIMEZONE=$timezone
 BOT_QUIET_HOURS=$quiet_hours
+NODE_IMAGE=node:22-alpine
+ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
+NPM_REGISTRY=https://registry.npmmirror.com
+PYPI_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ASTRBOT_GITHUB_PROXY=https://ghfast.top/
+ASTRBOT_SOURCE_SHA256=ad85c6405802752d4dc64c7d76c047cc815157e0fdae90079763eebd55fb9959
 WECHAT_TRANSPORT=$wechat_transport
 DASHBOARD_HOST_PORT=$dashboard_port
 ASTRBOT_WEBUI_HOST_PORT=$astrbot_port

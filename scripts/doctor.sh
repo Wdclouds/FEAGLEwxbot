@@ -32,13 +32,22 @@ case "$(uname -m)" in
   *) warn "当前架构 $(uname -m) 尚未经过完整测试" ;;
 esac
 
-for command_name in curl tar; do
+for command_name in curl tar sha256sum; do
   if command -v "$command_name" >/dev/null 2>&1; then
     ok "$command_name 已安装"
   else
     fail "缺少 $command_name"
   fi
 done
+
+if command -v docker >/dev/null 2>&1; then
+  docker_mirrors="$(docker info --format '{{join .RegistryConfig.Mirrors ","}}' 2>/dev/null || true)"
+  if [[ -n "$docker_mirrors" ]]; then
+    ok "Docker 镜像加速已配置"
+  else
+    warn "未检测到 Docker Hub 镜像加速；阿里云 ECS 建议配置账号专属 ACR 加速地址"
+  fi
+fi
 
 if [[ -f "$PROJECT_DIR/.env" ]]; then
   mode="$(stat -c '%a' "$PROJECT_DIR/.env" 2>/dev/null || true)"
@@ -55,6 +64,32 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
   else
     fail "大模型已启用但 API Key 未配置"
   fi
+
+  alpine_mirror="$(env_value ALPINE_MIRROR)"
+  npm_registry="$(env_value NPM_REGISTRY)"
+  pypi_index="$(env_value PYPI_INDEX_URL)"
+  astrbot_proxy="$(env_value ASTRBOT_GITHUB_PROXY)"
+  astrbot_checksum="$(env_value ASTRBOT_SOURCE_SHA256)"
+  alpine_mirror="${alpine_mirror:-https://mirrors.aliyun.com/alpine}"
+  npm_registry="${npm_registry:-https://registry.npmmirror.com}"
+  pypi_index="${pypi_index:-https://mirrors.aliyun.com/pypi/simple/}"
+  astrbot_proxy="${astrbot_proxy:-https://ghfast.top/}"
+  astrbot_checksum="${astrbot_checksum:-ad85c6405802752d4dc64c7d76c047cc815157e0fdae90079763eebd55fb9959}"
+  [[ "$alpine_mirror" == https://* ]] \
+    && ok "Alpine 国内镜像已配置" \
+    || fail "ALPINE_MIRROR 必须是 HTTPS 地址"
+  [[ "$npm_registry" == https://* ]] \
+    && ok "npm 国内镜像已配置" \
+    || fail "NPM_REGISTRY 必须是 HTTPS 地址"
+  [[ "$pypi_index" == https://* ]] \
+    && ok "PyPI 国内镜像已配置" \
+    || fail "PYPI_INDEX_URL 必须是 HTTPS 地址"
+  [[ "$astrbot_proxy" == https://* ]] \
+    && ok "AstrBot 国内下载加速已配置" \
+    || fail "ASTRBOT_GITHUB_PROXY 必须是 HTTPS 地址"
+  [[ "$astrbot_checksum" =~ ^[A-Fa-f0-9]{64}$ ]] \
+    && ok "AstrBot 源码包校验值已固定" \
+    || fail "ASTRBOT_SOURCE_SHA256 不是有效的 SHA-256"
 
   transport="$(env_value WECHAT_TRANSPORT)"
   transport="${transport:-wechat4u}"

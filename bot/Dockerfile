@@ -1,14 +1,19 @@
-FROM node:22-alpine
+ARG NODE_IMAGE=node:22-alpine
+FROM ${NODE_IMAGE}
+
+ARG ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG PYPI_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 WORKDIR /app
 
 ENV ASTRBOT_ROOT=/app \
-    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_INDEX_URL=${PYPI_INDEX_URL} \
     PYTHONPATH=/app/AstrBot \
     TZ=Asia/Shanghai \
-    UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple/
+    UV_DEFAULT_INDEX=${PYPI_INDEX_URL}
 
-RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine/#https://mirrors.aliyun.com/alpine/#g' /etc/apk/repositories \
+RUN sed -i -E "s#https?://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR%/}#g" /etc/apk/repositories \
     && apk add --no-cache \
     bash \
     build-base \
@@ -27,7 +32,9 @@ RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine/#https://mirrors.aliyun.com/
     tzdata
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm config set registry "$NPM_REGISTRY" \
+    && npm config set replace-registry-host always \
+    && npm ci --omit=dev
 
 COPY AstrBot ./AstrBot
 RUN python3 -m venv /app/.venv \
