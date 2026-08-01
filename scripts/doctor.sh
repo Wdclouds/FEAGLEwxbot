@@ -8,6 +8,11 @@ ok() { printf '  [OK] %s\n' "$1"; }
 warn() { printf '  [WARN] %s\n' "$1"; }
 fail() { printf '  [FAIL] %s\n' "$1"; failures=$((failures + 1)); }
 
+env_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "$PROJECT_DIR/.env" | tail -n 1
+}
+
 printf 'FEAGLE WxBot Bridge 环境检查\n'
 
 if command -v docker >/dev/null 2>&1; then
@@ -50,6 +55,45 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
   else
     fail "大模型已启用但 API Key 未配置"
   fi
+
+  transport="$(env_value WECHAT_TRANSPORT)"
+  transport="${transport:-wechat4u}"
+  case "$transport" in
+    wechat4u)
+      ok "微信接入方式: Wechat4u"
+      ;;
+    android)
+      ok "微信接入方式: Android Agent"
+      android_token="$(env_value ANDROID_BRIDGE_TOKEN)"
+      android_bind="$(env_value ANDROID_WS_BIND_HOST)"
+      android_port="$(env_value ANDROID_WS_HOST_PORT)"
+      android_path="$(env_value ANDROID_WS_PATH)"
+      if [[ ${#android_token} -ge 24 ]]; then
+        ok "Android 配对密钥已配置（值未显示）"
+      else
+        fail "Android 配对密钥缺失或长度不足"
+      fi
+      if [[ -z "$android_bind" || "$android_bind" == "0.0.0.0" ]]; then
+        fail "Android WebSocket 必须绑定回环或 Tailscale 私网地址"
+      else
+        ok "Android WebSocket 绑定地址: $android_bind"
+      fi
+      if [[ "$android_port" =~ ^[0-9]+$ ]] \
+        && ((10#$android_port >= 1 && 10#$android_port <= 65535)); then
+        ok "Android WebSocket 端口: $android_port"
+      else
+        fail "Android WebSocket 端口无效"
+      fi
+      if [[ "$android_path" == /* ]]; then
+        ok "Android WebSocket 路径: $android_path"
+      else
+        fail "Android WebSocket 路径必须以 / 开头"
+      fi
+      ;;
+    *)
+      fail "不支持的微信接入方式: $transport"
+      ;;
+  esac
 else
   fail "缺少 .env，请先运行 ./wxbot-bridge setup"
 fi

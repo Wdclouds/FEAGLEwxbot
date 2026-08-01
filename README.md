@@ -45,8 +45,9 @@ chmod +x wxbot-bridge scripts/*.sh
 ./wxbot-bridge setup
 ```
 
-配置向导会检查环境、询问模型与休眠时段、生成本机 `.env`，然后下载固定版本的
-AstrBot 并启动机器人。
+配置向导会检查环境，让用户选择 Wechat4u 或 Android Agent，询问模型与休眠时段、
+生成本机 `.env`，然后下载固定版本的 AstrBot 并启动机器人。Android 模式会自动
+生成不回显的配对密钥，并引导继续使用 Android Kit。
 
 完整步骤、首次扫码和 SSH 隧道说明见
 [操作步骤说明书](./docs/user-guide.md)。

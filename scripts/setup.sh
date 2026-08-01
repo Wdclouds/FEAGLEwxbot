@@ -20,6 +20,26 @@ prompt_secret() {
   printf '%s' "$value"
 }
 
+valid_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535))
+}
+
+generate_bridge_secret() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+  if [[ -r /proc/sys/kernel/random/uuid ]]; then
+    local first second
+    first="$(tr -d '-' </proc/sys/kernel/random/uuid)"
+    second="$(tr -d '-' </proc/sys/kernel/random/uuid)"
+    printf '%s%s' "$first" "$second"
+    return
+  fi
+  printf '无法安全生成 Android Bridge 密钥，请安装 openssl 后重试。\n' >&2
+  exit 1
+}
+
 if [[ -f "$ENV_PATH" ]]; then
   read -r -p ".env 已存在，是否重新配置？现有文件会备份 [y/N]: " overwrite
   if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
@@ -71,6 +91,53 @@ case "$provider_choice" in
     ;;
 esac
 
+printf '\n选择微信接入方式：\n'
+printf '  1) Wechat4u 扫码登录（简单，但受 Web 微信可用性影响）\n'
+printf '  2) Android Hook Agent（推荐备用机，需要单独运行 Android Kit）\n'
+read -r -p "请选择 [1-2]: " transport_choice
+
+wechat_transport=wechat4u
+android_ws_bind_host=127.0.0.1
+android_ws_host_port=6191
+android_ws_port=6191
+android_ws_path=/android
+android_bridge_token=
+android_pairing_db_path=/app/data/android/pairing.sqlite
+
+case "$transport_choice" in
+  1|"") ;;
+  2)
+    wechat_transport=android
+    android_bridge_token="$(generate_bridge_secret)"
+    tailscale_ip=
+    if command -v tailscale >/dev/null 2>&1; then
+      tailscale_ip="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
+    fi
+    if [[ -n "$tailscale_ip" ]]; then
+      printf '检测到本机 Tailscale IPv4：%s\n' "$tailscale_ip"
+      android_ws_bind_host="$tailscale_ip"
+    fi
+    android_ws_bind_host="$(prompt_default \
+      "Android WebSocket 绑定地址（127.0.0.1 或 Tailscale IPv4）" \
+      "$android_ws_bind_host")"
+    android_ws_host_port="$(prompt_default \
+      "Android WebSocket 端口" "$android_ws_host_port")"
+    if [[ "$android_ws_bind_host" == "0.0.0.0" ]]; then
+      printf '不允许把 Android WebSocket 直接绑定到全部公网接口。\n' >&2
+      exit 2
+    fi
+    if ! valid_port "$android_ws_host_port"; then
+      printf 'Android WebSocket 端口无效。\n' >&2
+      exit 2
+    fi
+    printf '已自动生成 Android 配对密钥；不会在终端显示。\n'
+    ;;
+  *)
+    printf '无效选项。\n' >&2
+    exit 2
+    ;;
+esac
+
 if [[ "$llm_enabled" == true && -z "$llm_api_key" ]]; then
   printf 'API Key 不能为空。\n' >&2
   exit 2
@@ -80,6 +147,21 @@ timezone="$(prompt_default "时区" "Asia/Shanghai")"
 quiet_hours="$(prompt_default "休眠时段" "00:00-07:00")"
 dashboard_port="$(prompt_default "Dashboard 本机端口" "6190")"
 astrbot_port="$(prompt_default "AstrBot WebUI 本机端口" "6185")"
+
+if ! valid_port "$dashboard_port" || ! valid_port "$astrbot_port"; then
+  printf 'Dashboard 或 AstrBot 端口无效。\n' >&2
+  exit 2
+fi
+if [[ "$dashboard_port" == "$astrbot_port" ]]; then
+  printf 'Dashboard 与 AstrBot 端口不能相同。\n' >&2
+  exit 2
+fi
+if [[ "$wechat_transport" == android \
+  && ( "$android_ws_host_port" == "$dashboard_port" \
+    || "$android_ws_host_port" == "$astrbot_port" ) ]]; then
+  printf 'Android WebSocket 端口不能与管理页面端口相同。\n' >&2
+  exit 2
+fi
 
 read -r -p "是否配置飞书私聊通知？[y/N]: " configure_feishu
 feishu_app_id=
@@ -95,8 +177,18 @@ cat >"$temporary_env" <<EOF
 TZ=$timezone
 BOT_TIMEZONE=$timezone
 BOT_QUIET_HOURS=$quiet_hours
+WECHAT_TRANSPORT=$wechat_transport
 DASHBOARD_HOST_PORT=$dashboard_port
 ASTRBOT_WEBUI_HOST_PORT=$astrbot_port
+ANDROID_WS_BIND_HOST=$android_ws_bind_host
+ANDROID_WS_HOST_PORT=$android_ws_host_port
+ANDROID_WS_PORT=$android_ws_port
+ANDROID_WS_PATH=$android_ws_path
+ANDROID_BRIDGE_TOKEN=$android_bridge_token
+ANDROID_PAIRING_DB_PATH=$android_pairing_db_path
+ANDROID_DEVICE_ID=
+ANDROID_HEARTBEAT_TIMEOUT_MS=75000
+ANDROID_COMMAND_TIMEOUT_MS=30000
 LLM_ENABLED=$llm_enabled
 LLM_PROVIDER=$llm_provider
 LLM_API_BASE=$llm_api_base
@@ -144,6 +236,10 @@ mkdir -p "$PROJECT_DIR/data"
 chmod 700 "$PROJECT_DIR/data"
 
 printf '\n配置已安全写入 .env（权限 600）。\n'
+if [[ "$wechat_transport" == android ]]; then
+  printf 'Android 模式下一步：在 Windows 电脑克隆 FEAGLEwxbot-android-kit，\n'
+  printf '连接已 Root 的设备，按向导构建、安装并执行一次性配对。\n'
+fi
 "$PROJECT_DIR/scripts/doctor.sh"
 "$PROJECT_DIR/scripts/fetch-astrbot.sh"
 
