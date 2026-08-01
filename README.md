@@ -32,6 +32,21 @@
 
 - [Android Agent 构建与接入](./android/README.md)
 - [安全策略](./SECURITY.md)
+- [给 AI Agent 使用的管理 Skill](./skills/manage-feagle-wxbot/SKILL.md)
+
+## Agent Skill
+
+仓库内置 `manage-feagle-wxbot` Skill，供支持 `SKILL.md` 的 Agent 安全部署、运行和诊断
+本项目。它会优先调用仓库现有向导，区分服务器、浏览器电脑与 Android 设备，并默认
+保护密钥、二维码、Session、联系人和消息内容。
+
+安装方式因 Agent 产品而异：可以安装
+[`skills/manage-feagle-wxbot`](./skills/manage-feagle-wxbot/) 目录，或让 Agent 在操作本
+仓库前先完整读取其中的 `SKILL.md`。示例请求：
+
+```text
+使用 manage-feagle-wxbot 帮我从零部署机器人。
+```
 
 ## 快速开始
 
