@@ -1,4 +1,0 @@
-interface:
-  display_name: "Manage FEAGLE WxBot"
-  short_description: "Safely deploy, operate, and diagnose FEAGLE WxBot"
-  default_prompt: "Use $manage-feagle-wxbot to deploy or diagnose my FEAGLE WxBot safely."

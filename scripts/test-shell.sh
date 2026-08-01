@@ -3,20 +3,9 @@ set -Eeuo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-for script in "$PROJECT_DIR/wxbot-bridge" "$PROJECT_DIR"/scripts/*.sh \
-  "$PROJECT_DIR"/skills/*/scripts/*.sh; do
-  [[ -e "$script" ]] || continue
+for script in "$PROJECT_DIR/wxbot-bridge" "$PROJECT_DIR"/scripts/*.sh; do
   bash -n "$script"
 done
-
-skill_root="$PROJECT_DIR/skills/manage-feagle-wxbot"
-grep -qx 'name: manage-feagle-wxbot' "$skill_root/SKILL.md"
-grep -q '^description: .*FEAGLEwxbot' "$skill_root/SKILL.md"
-grep -q '\$manage-feagle-wxbot' "$skill_root/agents/openai.yaml"
-if grep -R -n '\[TODO\]\|TODO:' "$skill_root"; then
-  printf 'Agent Skill 中仍有未完成占位内容。\n' >&2
-  exit 1
-fi
 
 temporary_root="$(mktemp -d)"
 cleanup() {
@@ -36,12 +25,6 @@ if [[ "${1:-}" == --version ]]; then
   printf 'Docker version test\n'
 elif [[ "${1:-}" == compose && "${2:-}" == version ]]; then
   printf '2.0.0\n'
-elif [[ "${1:-}" == inspect ]]; then
-  if [[ "$*" == *'.State.Status'* ]]; then
-    printf 'running\n'
-  elif [[ "$*" == *'.State.Health'* ]]; then
-    printf 'healthy\n'
-  fi
 else
   exit 2
 fi
@@ -56,21 +39,15 @@ cat >"$fake_bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 output=
-write_status=false
 while (($#)); do
   if [[ "$1" == -o ]]; then
     output="$2"
-    shift 2
-  elif [[ "$1" == --write-out ]]; then
-    write_status=true
     shift 2
   else
     shift
   fi
 done
-if [[ "$write_status" == true ]]; then
-  printf '200'
-elif [[ -n "$output" ]]; then
+if [[ -n "$output" ]]; then
   cp "$FAKE_ASTRBOT_ARCHIVE" "$output"
 else
   printf '{"code":0,"tenant_access_token":"test-token","expire":7200}\n'
@@ -156,29 +133,6 @@ if ! grep -q '不要在服务器终端里运行' "$PROJECT_DIR/scripts/wait-read
 fi
 if ! grep -q 'COMPOSE_BAKE=false' "$PROJECT_DIR/wxbot-bridge"; then
   printf '启动命令未关闭缺少 buildx 时的 Compose Bake。\n' >&2
-  exit 1
-fi
-
-status_case="$temporary_root/status-case"
-mkdir -p "$status_case"
-touch "$status_case/docker-compose.yml" "$status_case/wxbot-bridge"
-cat >"$status_case/.env" <<'EOF'
-WECHAT_TRANSPORT=android
-LLM_ENABLED=true
-LLM_API_KEY=never-print-this-model-secret
-FEISHU_APP_ID=cli_never_print_this_id
-FEISHU_APP_SECRET=never-print-this-feishu-secret
-DASHBOARD_HOST_PORT=6190
-EOF
-status_output="$(PATH="$fake_bin:$PATH" \
-  "$PROJECT_DIR/skills/manage-feagle-wxbot/scripts/collect-status.sh" "$status_case")"
-grep -q '^transport=android$' <<<"$status_output"
-grep -q '^llm=configured$' <<<"$status_output"
-grep -q '^feishu=configured$' <<<"$status_output"
-grep -q '^container=running health=healthy$' <<<"$status_output"
-grep -q '^dashboard_live_http=200$' <<<"$status_output"
-if grep -qE 'never-print|cli_never' <<<"$status_output"; then
-  printf '安全状态摘要意外泄露了凭据。\n' >&2
   exit 1
 fi
 
