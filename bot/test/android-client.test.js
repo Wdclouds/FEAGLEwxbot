@@ -216,6 +216,7 @@ test('Android transport exchanges a one-time code for a device-bound token', asy
     token: '',
     suffix: '?mode=pair',
   });
+  t.after(() => pairingAgent.socket.close());
   pairingAgent.socket.send(JSON.stringify(envelope('pair_request', {
     pairingCode: code,
   })));

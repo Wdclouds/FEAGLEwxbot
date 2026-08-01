@@ -374,7 +374,7 @@ export class AndroidWechatClient {
       type: 'pair_ack',
       deviceId: result.deviceId,
       token: result.token,
-    }, () => socket.close(1000, 'Pairing complete'));
+    });
   }
 
   async handlePrivateText(socket, message) {
