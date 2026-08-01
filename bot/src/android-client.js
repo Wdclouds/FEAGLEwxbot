@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import { WECHAT_ADMIN_MODES } from './control-state.js';
+import { AndroidPairingStore } from './android-pairing-store.js';
 
 const PROTOCOL = 'feagle.android.v1';
 const TERMINAL_RECEIPT_STATUSES = new Set(['FORWARDED', 'DROPPED', 'BLOCKED']);
@@ -80,6 +81,17 @@ export class AndroidWechatClient {
       process.env.ANDROID_COMMAND_TIMEOUT_MS,
       30_000,
     ),
+    pairingStore = null,
+    pairingDbPath = process.env.ANDROID_PAIRING_DB_PATH
+      || '/app/data/android/pairing.sqlite',
+    pairingAttemptLimit = positiveInteger(
+      process.env.ANDROID_PAIRING_ATTEMPT_LIMIT,
+      10,
+    ),
+    pairingAttemptWindowMs = positiveInteger(
+      process.env.ANDROID_PAIRING_ATTEMPT_WINDOW_MS,
+      5 * 60_000,
+    ),
   }) {
     this.state = state;
     this.idMap = idMap;
@@ -94,6 +106,12 @@ export class AndroidWechatClient {
     this.adminMode = initialAdminMode;
     this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     this.commandTimeoutMs = commandTimeoutMs;
+    this.pairingStore = pairingStore;
+    this.ownsPairingStore = !pairingStore;
+    this.pairingDbPath = pairingDbPath;
+    this.pairingAttemptLimit = pairingAttemptLimit;
+    this.pairingAttemptWindowMs = pairingAttemptWindowMs;
+    this.pairingAttempts = new Map();
     this.server = null;
     this.socket = null;
     this.deviceId = '';
@@ -111,6 +129,12 @@ export class AndroidWechatClient {
         'ANDROID_BRIDGE_TOKEN is required and must contain at least 24 characters',
       );
     }
+    if (!this.pairingStore) {
+      this.pairingStore = new AndroidPairingStore({
+        path: this.pairingDbPath,
+        secret: this.token,
+      });
+    }
     this.state.patch('wechat', {
       status: 'WAITING_AGENT',
       account: 'Android Hook',
@@ -125,11 +149,33 @@ export class AndroidWechatClient {
       path: this.path,
       maxPayload: 64 * 1024,
       verifyClient: ({ req }, done) => {
+        const url = new URL(req.url || this.path, 'ws://localhost');
+        if (url.searchParams.get('mode') === 'pair') {
+          req.feagleAuth = { pairingOnly: true, deviceId: '' };
+          done(true);
+          return;
+        }
         const supplied = bearerToken(req.headers.authorization);
-        done(secureEqual(supplied, this.token), 401, 'Unauthorized');
+        if (secureEqual(supplied, this.token)) {
+          req.feagleAuth = { pairingOnly: false, deviceId: '' };
+          done(true);
+          return;
+        }
+        const authenticatedDeviceId = this.pairingStore.authenticateToken(supplied);
+        if (authenticatedDeviceId) {
+          req.feagleAuth = {
+            pairingOnly: false,
+            deviceId: authenticatedDeviceId,
+          };
+          done(true);
+          return;
+        }
+        done(false, 401, 'Unauthorized');
       },
     });
-    this.server.on('connection', (socket) => this.handleConnection(socket));
+    this.server.on('connection', (socket, request) => (
+      this.handleConnection(socket, request)
+    ));
     this.server.on('error', (error) => this.state.addError('android-wss', error));
 
     await new Promise((resolve, reject) => {
@@ -141,7 +187,7 @@ export class AndroidWechatClient {
     console.log(`[Android] Agent WebSocket listening on ${this.host}:${this.port}${this.path}`);
   }
 
-  handleConnection(socket) {
+  handleConnection(socket, request) {
     if (this.stopping) {
       socket.close(1012, 'Server stopping');
       return;
@@ -150,11 +196,25 @@ export class AndroidWechatClient {
       deviceId: '',
       hookConnected: false,
       lastSeenAt: Date.now(),
+      pairingOnly: request?.feagleAuth?.pairingOnly === true,
+      authenticatedDeviceId: String(request?.feagleAuth?.deviceId || ''),
+      remoteAddress: String(request?.socket?.remoteAddress || 'unknown'),
+      pairingTimer: null,
     };
+    if (socket.feagle.pairingOnly) {
+      socket.feagle.pairingTimer = setTimeout(
+        () => socket.close(1008, 'Pairing timeout'),
+        30_000,
+      );
+      socket.feagle.pairingTimer.unref();
+    }
     socket.on('message', (raw) => {
       void this.handleMessage(socket, raw);
     });
-    socket.on('close', () => this.handleClose(socket));
+    socket.on('close', () => {
+      if (socket.feagle.pairingTimer) clearTimeout(socket.feagle.pairingTimer);
+      this.handleClose(socket);
+    });
     socket.on('error', (error) => {
       if (socket === this.socket) this.state.addError('android-agent', error);
     });
@@ -171,6 +231,11 @@ export class AndroidWechatClient {
     }
     if (message?.protocol !== PROTOCOL || typeof message.type !== 'string') {
       socket.close(1008, 'Invalid protocol');
+      return;
+    }
+
+    if (socket.feagle.pairingOnly) {
+      this.handlePairRequest(socket, message);
       return;
     }
 
@@ -209,6 +274,13 @@ export class AndroidWechatClient {
       socket.close(1008, 'Invalid device ID');
       return;
     }
+    if (
+      socket.feagle.authenticatedDeviceId
+      && deviceId !== socket.feagle.authenticatedDeviceId
+    ) {
+      socket.close(1008, 'Device token mismatch');
+      return;
+    }
     if (this.allowedDeviceId && deviceId !== this.allowedDeviceId) {
       socket.close(1008, 'Device not allowed');
       return;
@@ -225,6 +297,9 @@ export class AndroidWechatClient {
     socket.feagle.hookConnected = message.hookConnected === true;
     this.socket = socket;
     this.deviceId = deviceId;
+    if (socket.feagle.authenticatedDeviceId) {
+      this.pairingStore.touchDevice(deviceId);
+    }
     this.selfId = this.idMap.entity(
       'self',
       `android:${deviceId}`,
@@ -252,6 +327,54 @@ export class AndroidWechatClient {
       lastSyncAt: new Date(socket.feagle.lastSeenAt).toISOString(),
       syncAgeMs: 0,
     });
+  }
+
+  handlePairRequest(socket, message) {
+    if (message.type !== 'pair_request') {
+      socket.close(1008, 'Pairing request required');
+      return;
+    }
+    const now = Date.now();
+    const key = socket.feagle.remoteAddress;
+    if (this.pairingAttempts.size > 1_024) {
+      for (const [address, attempts] of this.pairingAttempts) {
+        if (!attempts.some(
+          (timestamp) => now - timestamp < this.pairingAttemptWindowMs
+        )) this.pairingAttempts.delete(address);
+      }
+    }
+    const recent = (this.pairingAttempts.get(key) || [])
+      .filter((timestamp) => now - timestamp < this.pairingAttemptWindowMs);
+    if (recent.length >= this.pairingAttemptLimit) {
+      this.pairingAttempts.set(key, recent);
+      this.send(socket, {
+        type: 'pair_rejected',
+        reason: 'rate_limited',
+        retryAfterMs: this.pairingAttemptWindowMs,
+      });
+      socket.close(1008, 'Too many pairing attempts');
+      return;
+    }
+    recent.push(now);
+    this.pairingAttempts.set(key, recent);
+
+    const result = this.pairingStore.redeemCode(
+      message.pairingCode,
+      message.deviceId,
+    );
+    if (!result) {
+      this.send(socket, {
+        type: 'pair_rejected',
+        reason: 'invalid_or_expired_code',
+      });
+      return;
+    }
+    this.pairingAttempts.delete(key);
+    this.send(socket, {
+      type: 'pair_ack',
+      deviceId: result.deviceId,
+      token: result.token,
+    }, () => socket.close(1000, 'Pairing complete'));
   }
 
   async handlePrivateText(socket, message) {
@@ -465,9 +588,9 @@ export class AndroidWechatClient {
     throw error;
   }
 
-  send(socket, message) {
+  send(socket, message, callback) {
     if (socket?.readyState !== WebSocket.OPEN) return false;
-    socket.send(JSON.stringify({ protocol: PROTOCOL, ...message }));
+    socket.send(JSON.stringify({ protocol: PROTOCOL, ...message }), callback);
     return true;
   }
 
@@ -489,5 +612,8 @@ export class AndroidWechatClient {
     this.loggedIn = false;
     this.server?.close();
     this.server = null;
+    this.pairingAttempts.clear();
+    if (this.ownsPairingStore) this.pairingStore?.close();
+    this.pairingStore = null;
   }
 }

@@ -86,6 +86,7 @@ test('Android event reaches AstrBot as a OneBot v11 private message before ACK',
     host: '127.0.0.1',
     port: 0,
     token: TOKEN,
+    pairingDbPath: join(directory, 'pairing.sqlite'),
   });
   await android.start();
 

@@ -369,7 +369,7 @@ SSH 隧道右侧端口也要与新的宿主机端口一致。容器内部 OneBot
 **检查**
 
 1. `.env` 中 `WECHAT_TRANSPORT=android`。
-2. `ANDROID_BRIDGE_TOKEN` 与设备完全一致，且至少 24 个字符。
+2. `ANDROID_BRIDGE_TOKEN` 已在服务器设置且至少 24 个字符；Agent 0.5.0 不应手工复制它。
 3. Endpoint 路径与 `ANDROID_WS_PATH=/android` 一致。
 4. 标准公网远程连接使用 `wss://`。
 5. Tailscale 方案中 ECS 与 Android 在同一 Tailnet。
@@ -383,6 +383,14 @@ docker compose logs --tail 300 bot | grep -iE 'Android|6191|WebSocket'
 ```
 
 普通公网明文 `ws://` 会被 Agent 拒绝，这是安全限制，不应通过关闭校验绕过。
+
+如果显示 `pairing failed`：
+
+1. 重新生成配对码；旧码只有 5 分钟有效且只能使用一次。
+2. 确认 Agent 版本至少为 `0.5.0`。
+3. 确认 Endpoint 以 `/android` 结尾。
+4. 连续输错后等待 5 分钟再试，不要关闭服务端频率限制。
+5. 使用 `android-pairing-cli.js list` 检查设备是否已登记；必要时先吊销再重配。
 
 ### TRB-013：Android Agent 已连云端，但 Hook 未连接
 

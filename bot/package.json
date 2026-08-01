@@ -10,6 +10,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
+    "pair-android": "node src/android-pairing-cli.js create",
     "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {

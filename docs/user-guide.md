@@ -301,17 +301,19 @@ ANDROID_WS_BIND_HOST=127.0.0.1
 ANDROID_WS_HOST_PORT=6191
 ANDROID_WS_PORT=6191
 ANDROID_WS_PATH=/android
-ANDROID_BRIDGE_TOKEN=至少24字符的独立随机Token
+ANDROID_BRIDGE_TOKEN=至少32字符的独立随机密钥
+ANDROID_PAIRING_DB_PATH=/app/data/android/pairing.sqlite
 ANDROID_DEVICE_ID=
 ```
 
-生成设备 Token：
+生成 Bridge 配对密钥：
 
 ```bash
 openssl rand -hex 32
 ```
 
-不要复用模型 Key、飞书 Secret 或 SSH 凭据。
+不要复用模型 Key、飞书 Secret 或 SSH 凭据。这个值用于保护配对摘要，同时兼容
+旧版 Agent；新用户不需要把它复制到平板。
 
 远程设备必须使用：
 
@@ -325,6 +327,22 @@ ACK 和版本限制见 [Android Agent 构建与接入](../android/README.md)。
 
 ```bash
 docker compose up -d --build bot
+```
+
+生成一个 5 分钟有效、只能使用一次的 8 位配对码：
+
+```bash
+docker exec Feagle-wxbot node /app/src/android-pairing-cli.js create
+```
+
+在 Agent 0.5.0 中填写 Endpoint 与配对码，点击“配对并启动”。Agent 会自动换取
+设备专属 Token、保存到应用私有目录并重连；服务器数据库只保存 Token 摘要。
+
+已配对设备的查询与吊销：
+
+```bash
+docker exec Feagle-wxbot node /app/src/android-pairing-cli.js list
+docker exec Feagle-wxbot node /app/src/android-pairing-cli.js revoke 设备ID
 ```
 
 ## 12. 日常命令
