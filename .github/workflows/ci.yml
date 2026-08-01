@@ -23,5 +23,8 @@ jobs:
       - name: Check repository for secrets and runtime data
         working-directory: .
         run: ./scripts/check-secrets.sh
+      - name: Test shell setup and safety guards
+        working-directory: .
+        run: bash ./scripts/test-shell.sh
       - run: npm ci
       - run: npm test

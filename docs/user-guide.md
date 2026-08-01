@@ -31,13 +31,35 @@
 
 ## 2. 下载项目
 
+### 中国大陆网络说明
+
+项目默认按中国大陆服务器配置下载源：
+
+- Alpine：阿里云镜像；
+- npm：`https://registry.npmmirror.com`；
+- PyPI：`https://mirrors.aliyun.com/pypi/simple/`；
+- AstrBot：国内 GitHub 加速地址优先、GitHub 官方地址回退，并强制校验固定版本的
+  SHA-256。
+
+这些默认值会写入 `.env`，需要使用私有镜像或在海外部署时可以自行替换。不要关闭
+AstrBot 的 SHA-256 校验，也不要把镜像地址改为 HTTP。
+
+Docker 基础镜像是例外：阿里云 ACR 的 Docker Hub 加速地址与账号绑定，项目不会猜测
+或代填第三方公共代理。`./wxbot-bridge doctor` 会检查 Docker 是否配置了镜像加速。
+如果未配置，请在阿里云控制台打开“容器镜像服务 ACR → 镜像工具 → 镜像加速器”，
+复制当前账号的专属 HTTPS 地址并按页面说明配置 Docker。修改 Docker 配置会重启
+Docker 服务，应避开正在处理消息的时段。
+
 登录服务器后执行：
 
 ```bash
-git clone https://github.com/Wdclouds/FEAGLEwxbot-bridge.git
+git clone https://ghfast.top/https://github.com/Wdclouds/FEAGLEwxbot-bridge.git
 cd FEAGLEwxbot-bridge
 chmod +x wxbot-bridge scripts/*.sh
 ```
+
+该克隆地址已经在阿里云 ECS 实测可用。若加速入口临时不可用，可以删除
+`https://ghfast.top/` 前缀，回退 GitHub 官方地址。
 
 以后所有 Linux 命令默认都在项目根目录执行。
 
@@ -52,11 +74,13 @@ chmod +x wxbot-bridge scripts/*.sh
 1. 大模型供应商。
 2. API 地址、模型名称和上下文长度。
 3. API Key；输入时不会回显。
-4. 时区。
-5. 机器人休眠时段，默认 `00:00-07:00`。
-6. Dashboard 与 AstrBot WebUI 的宿主机端口。
-7. 是否配置飞书通知。
-8. 是否立刻构建并启动。
+4. 微信接入方式：Wechat4u 或 Android Agent。
+5. Android 模式的安全绑定地址与端口；配对密钥由向导自动生成且不回显。
+6. 时区。
+7. 机器人休眠时段，默认 `00:00-07:00`。
+8. Dashboard 与 AstrBot WebUI 的宿主机端口。
+9. 是否配置飞书通知。
+10. 是否立刻构建并启动。
 
 配置会写入项目根目录 `.env`，权限设为 `600`。如果 `.env` 已存在，重新运行向导
 会先创建带时间戳的备份。
@@ -64,13 +88,14 @@ chmod +x wxbot-bridge scripts/*.sh
 > [!IMPORTANT]
 > `.env` 包含真实密钥。不要把它发到聊天、Issue、网盘公开链接或提交到 Git。
 
-默认接入层是：
+默认接入层仍是：
 
 ```dotenv
 WECHAT_TRANSPORT=wechat4u
 ```
 
-首次部署建议先用默认值跑通服务器、AstrBot 和模型，再决定是否切换 Android Agent。
+已经准备好兼容 Root 设备的用户可以在首次向导中直接选择 Android Agent；向导会
+写入完整 Android 环境变量，后续按照 Android Kit 完成设备检查、安装和单次配对。
 
 ## 4. 启动与环境检查
 
@@ -81,7 +106,9 @@ WECHAT_TRANSPORT=wechat4u
 ./wxbot-bridge start
 ```
 
-`doctor` 检查 Docker、Compose、CPU 架构、基础命令、`.env` 权限和模型 Key。
+`doctor` 检查 Docker、Compose、CPU 架构、基础命令、`.env` 权限和模型 Key；
+Android 模式还会检查配对密钥、私网绑定地址、端口与 WebSocket 路径。
+国内网络模式还会检查 npm/PyPI 地址、AstrBot 校验值，并提示 Docker Hub 加速状态。
 
 `start` 会：
 

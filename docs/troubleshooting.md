@@ -18,6 +18,20 @@
 
 这些操作可能掩盖原始原因，或导致 Session、消息收据和控制状态丢失。
 
+### 下载依赖或构建镜像超时
+
+先运行：
+
+```bash
+./wxbot-bridge doctor
+```
+
+默认配置已经使用国内 Alpine、npm、PyPI 和 AstrBot 下载加速。AstrBot 下载器会自动
+回退官方地址，并拒绝任何 SHA-256 不一致的压缩包。如果卡在拉取 `node:22-alpine`，
+通常是 Docker Hub 链路问题；请配置自己阿里云账号的 ACR 镜像加速地址，不要从陌生
+教程复制公共代理。若需要临时换源，只修改 `.env` 中对应的 HTTPS 地址，并保留
+`ASTRBOT_SOURCE_SHA256`。
+
 ## 2. 标准排查顺序
 
 在项目根目录依次运行：

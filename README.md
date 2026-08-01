@@ -38,15 +38,24 @@
 服务器需要 Linux x86_64、Docker Engine、Docker Compose v2、`curl` 和 `tar`。
 推荐至少 2 GB 内存和 10 GB 可用磁盘。
 
+中国大陆服务器默认使用阿里云 Alpine/PyPI 镜像和 npmmirror；AstrBot 源码优先通过
+国内加速地址下载，失败后回退 GitHub 官方地址，且无论来源都必须通过固定 SHA-256
+校验。Docker Hub 加速地址由阿里云按账号生成，项目只做自动检测和提示，不会写入
+未经确认的公共代理。
+
 ```bash
-git clone https://github.com/Wdclouds/FEAGLEwxbot-bridge.git
+git clone https://ghfast.top/https://github.com/Wdclouds/FEAGLEwxbot-bridge.git
 cd FEAGLEwxbot-bridge
 chmod +x wxbot-bridge scripts/*.sh
 ./wxbot-bridge setup
 ```
 
-配置向导会检查环境、询问模型与休眠时段、生成本机 `.env`，然后下载固定版本的
-AstrBot 并启动机器人。
+上面的仓库地址是中国大陆默认加速入口；海外网络或加速入口临时不可用时，将
+`https://ghfast.top/` 前缀删除即可使用 GitHub 官方地址。
+
+配置向导会检查环境，让用户选择 Wechat4u 或 Android Agent，询问模型与休眠时段、
+生成本机 `.env`，然后下载固定版本的 AstrBot 并启动机器人。Android 模式会自动
+生成不回显的配对密钥，并引导继续使用 Android Kit。
 
 完整步骤、首次扫码和 SSH 隧道说明见
 [操作步骤说明书](./docs/user-guide.md)。

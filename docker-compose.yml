@@ -2,6 +2,11 @@ services:
   bot:
     build:
       context: ./bot
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        ALPINE_MIRROR: ${ALPINE_MIRROR:-https://mirrors.aliyun.com/alpine}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        PYPI_INDEX_URL: ${PYPI_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
     container_name: Feagle-wxbot
     restart: unless-stopped
     env_file:
