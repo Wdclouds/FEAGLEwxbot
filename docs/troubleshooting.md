@@ -471,6 +471,17 @@ docker compose logs --tail 300 bot | grep -iE 'Feishu|飞书|Lark'
 
 不要在排错截图中显示 App Secret、访问 Token 或真实 `open_id`。
 
+### TRB-015A：飞书扫码配置未完成
+
+- `invalid_or_expired_code`：授权链接已过期，重新运行 `./wxbot-bridge setup` 生成新码。
+- 授权页没有可选应用：确认扫码账号是目标企业管理员，或改用“创建新应用”。
+- 企业策略不允许自动创建：选择手动输入，并让管理员先在开放平台创建、配置和发布。
+- 显示凭据验证失败：检查应用是否属于当前租户、App Secret 是否完整，然后重试。
+- 国内服务器下载扫码工具慢：向导默认使用 `https://registry.npmmirror.com`，可先运行
+  `./wxbot-bridge doctor` 检查镜像配置。
+
+向导失败时不会覆盖已有 `.env`。不要把二维码、App Secret 或 Token 发到 Issue。
+
 ### TRB-016：休眠恢复后是否会处理夜间旧消息
 
 **预期行为**

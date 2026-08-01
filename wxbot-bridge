@@ -17,7 +17,7 @@ EOF
 run_start() {
   "$PROJECT_DIR/scripts/doctor.sh"
   "$PROJECT_DIR/scripts/fetch-astrbot.sh"
-  "${COMPOSE[@]}" up -d --build bot
+  COMPOSE_BAKE=false "${COMPOSE[@]}" up -d --build bot
   "$PROJECT_DIR/scripts/wait-ready.sh"
 }
 

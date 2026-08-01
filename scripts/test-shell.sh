@@ -47,7 +47,11 @@ while (($#)); do
     shift
   fi
 done
-cp "$FAKE_ASTRBOT_ARCHIVE" "$output"
+if [[ -n "$output" ]]; then
+  cp "$FAKE_ASTRBOT_ARCHIVE" "$output"
+else
+  printf '{"code":0,"tenant_access_token":"test-token","expire":7200}\n'
+fi
 EOF
 chmod +x "$fake_bin/docker" "$fake_bin/openssl" "$fake_bin/curl"
 
@@ -93,6 +97,44 @@ if printf '3\n2\n0.0.0.0\n' \
   exit 1
 fi
 [[ ! -e "$unsafe_case/.env" ]]
+
+manual_feishu_case="$temporary_root/manual-feishu-case"
+make_case "$manual_feishu_case"
+printf '3\n1\n\n\n16290\n16285\ny\n2\ncli_fixture\nfixture_secret\nn\n' \
+  | PATH="$fake_bin:$PATH" "$manual_feishu_case/scripts/setup.sh"
+grep -qx 'FEISHU_APP_ID=cli_fixture' "$manual_feishu_case/.env"
+grep -qx 'FEISHU_APP_SECRET=fixture_secret' "$manual_feishu_case/.env"
+
+fake_feishu_register="$temporary_root/fake-feishu-register.sh"
+cat >"$fake_feishu_register" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+cat >"$1" <<'CREDENTIALS'
+FEISHU_APP_ID=cli_qrfixture
+FEISHU_APP_SECRET=qrfixture_secret
+CREDENTIALS
+chmod 600 "$1"
+EOF
+chmod +x "$fake_feishu_register"
+
+qr_feishu_case="$temporary_root/qr-feishu-case"
+make_case "$qr_feishu_case"
+printf '3\n1\n\n\n16290\n16285\ny\n1\nn\n' \
+  | FEAGLE_FEISHU_REGISTER_HELPER="$fake_feishu_register" \
+    PATH="$fake_bin:$PATH" "$qr_feishu_case/scripts/setup.sh"
+grep -qx 'FEISHU_APP_ID=cli_qrfixture' "$qr_feishu_case/.env"
+grep -qx 'FEISHU_APP_SECRET=qrfixture_secret' "$qr_feishu_case/.env"
+
+if ! grep -q '不要在服务器终端里运行' "$PROJECT_DIR/scripts/wait-ready.sh" \
+  || ! grep -q 'ASTRBOT_WEBUI_HOST_PORT' "$PROJECT_DIR/scripts/wait-ready.sh"; then
+  printf '启动完成提示缺少本地 SSH 隧道说明。\n' >&2
+  exit 1
+fi
+if ! grep -q 'COMPOSE_BAKE=false' "$PROJECT_DIR/wxbot-bridge"; then
+  printf '启动命令未关闭缺少 buildx 时的 Compose Bake。\n' >&2
+  exit 1
+fi
 
 fetch_case="$temporary_root/fetch-case"
 mkdir -p "$fetch_case/scripts" "$fetch_case/source/AstrBot-test"
