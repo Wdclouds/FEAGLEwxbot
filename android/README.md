@@ -127,7 +127,7 @@ location = /android {
 如果反向代理也运行在 Docker 中，`proxy_pass` 应改为它能访问到的 bot
 容器地址，并让两个容器加入同一个专用网络。不要为了省事使用宿主机全端口暴露。
 
-Agent 0.5.0 页面填写：
+Agent 0.5.1 或更高版本页面填写：
 
 ```text
 Endpoint: wss://你的域名/android

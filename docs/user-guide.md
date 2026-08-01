@@ -335,8 +335,9 @@ docker compose up -d --build bot
 docker exec Feagle-wxbot node /app/src/android-pairing-cli.js create
 ```
 
-在 Agent 0.5.0 中填写 Endpoint 与配对码，点击“配对并启动”。Agent 会自动换取
-设备专属 Token、保存到应用私有目录并重连；服务器数据库只保存 Token 摘要。
+在 Agent 0.5.1 或更高版本中填写 Endpoint 与配对码，点击“配对并启动”。Agent 会
+自动换取设备专属 Token、保存到应用私有目录并重连；成功后短码框自动清空，
+服务器数据库只保存 Token 摘要。
 
 已配对设备的查询与吊销：
 
