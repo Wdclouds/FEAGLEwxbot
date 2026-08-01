@@ -392,6 +392,11 @@ docker compose logs --tail 300 bot | grep -iE 'Android|6191|WebSocket'
 4. 连续输错后等待 5 分钟再试，不要关闭服务端频率限制。
 5. 使用 `android-pairing-cli.js list` 检查设备是否已登记；必要时先吊销再重配。
 
+如果配对显示成功，但云端连接随后显示 `1008`，检查 `.env` 中的
+`ANDROID_DEVICE_ID`。卸载重装 Agent 会生成新的设备 ID；旧白名单会允许短码兑换，
+但拒绝随后的正式 `hello`。把它更新为 Agent 页面显示的新 ID 并重新创建 bot 容器。
+配对 Token 本身也会绑定设备 ID，因此留空该可选白名单并不取消 Token 绑定校验。
+
 ### TRB-013：Android Agent 已连云端，但 Hook 未连接
 
 **现象**
