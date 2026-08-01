@@ -31,8 +31,8 @@ Root、系统框架安装与设备解锁由设备所有者自行完成。
 
 1. 安装 Agent APK，并在 LSPosed/Vector 中启用模块，作用域只选择微信。
 2. 锁定微信 `8.0.70` 并关闭应用商店自动更新。
-3. 打开 Agent，填写 Bridge Endpoint 和独立设备 Token。
-4. 点击“保存并启动”，确认 Agent 与 Hook 均显示已连接。
+3. 在服务器生成一次性配对码，打开 Agent 填写 Bridge Endpoint 和 8 位配对码。
+4. 点击“配对并启动”，确认设备配对、Agent 与 Hook 均显示已连接。
 5. 如需通知兜底或通知回复，再手动开启“通知读取权限”。
 
 通知读取属于敏感系统权限，安装脚本不会静默开启。Agent 只处理
@@ -77,7 +77,7 @@ android/app/build/outputs/apk/debug/app-debug.apk
 
 ## Bridge 配置
 
-生成独立设备 Token，不要复用大模型、飞书或 SSH 密钥：
+生成 Bridge 配对密钥，不要复用大模型、飞书或 SSH 密钥：
 
 ```bash
 openssl rand -hex 32
@@ -90,14 +90,21 @@ WECHAT_TRANSPORT=android
 ANDROID_WS_BIND_HOST=127.0.0.1
 ANDROID_WS_PORT=6191
 ANDROID_WS_PATH=/android
-ANDROID_BRIDGE_TOKEN=替换为随机生成的设备Token
+ANDROID_BRIDGE_TOKEN=替换为随机生成的配对密钥
+ANDROID_PAIRING_DB_PATH=/app/data/android/pairing.sqlite
 
 # 可选：首次成功连接后，把 Agent 页面显示的 Device ID 填到这里，
 # 从而只允许这一台设备。
 ANDROID_DEVICE_ID=
 ```
 
-重新创建 bot 容器后，服务只通过 Docker 映射到宿主机
+重新创建 bot 容器后，生成一个 5 分钟有效且只能使用一次的配对码：
+
+```bash
+docker exec Feagle-wxbot node /app/src/android-pairing-cli.js create
+```
+
+服务只通过 Docker 映射到宿主机
 `127.0.0.1:6191`。不要直接开放 6191 安全组端口。
 
 ## 远程传输
@@ -120,11 +127,11 @@ location = /android {
 如果反向代理也运行在 Docker 中，`proxy_pass` 应改为它能访问到的 bot
 容器地址，并让两个容器加入同一个专用网络。不要为了省事使用宿主机全端口暴露。
 
-Agent 页面填写：
+Agent 0.5.1 或更高版本页面填写：
 
 ```text
 Endpoint: wss://你的域名/android
-Token:    ANDROID_BRIDGE_TOKEN 的值
+配对码:   服务器刚生成的 8 位一次性配对码
 ```
 
 ### 方案 B：Tailscale 私网
@@ -148,7 +155,9 @@ Endpoint: ws://ECS的Tailscale-IPv4:6191/android
 ## 安全边界
 
 - Binder 服务只接受 Agent 自身 UID 和微信包 UID。
-- WSS 或 Tailscale 私网连接必须提供 Bearer Token；服务端要求至少 24 个字符。
+- 首次配对使用 5 分钟有效的单次短码，并限制同一来源的尝试频率。
+- 配对成功后使用随机设备 Bearer Token，且 Token 与设备 ID 绑定。
+- 配对码和设备 Token 均不以明文保存在服务器数据库中。
 - 可选 `ANDROID_DEVICE_ID` 用于固定唯一设备。
 - 日志不输出消息正文、完整联系人标识或 Token。
 - 待确认事件保存在 Android 应用私有 SharedPreferences 中。
