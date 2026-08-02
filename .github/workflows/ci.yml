@@ -27,6 +27,12 @@ jobs:
       - name: Test shell setup and safety guards
         working-directory: .
         run: bash ./scripts/test-shell.sh
+      - name: Validate Docker Compose manifest
+        working-directory: .
+        run: |
+          cp .env.example .env
+          trap 'rm -f .env' EXIT
+          docker compose config --quiet
       - run: npm ci
       - run: npm test
 
