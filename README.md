@@ -80,18 +80,21 @@ Alpine、npm 和 PyPI 默认使用国内镜像。AstrBot 下载无论来自加�
 
 ## Android 快速开始
 
-在 Windows 10/11 克隆同一个仓库，连接已由设备所有者完成 Root、Zygisk 与 USB 调试准备的
-Android 设备，然后运行：
+Android 路线同时涉及服务器、Windows 与已 Root 平板。第一次部署请按照
+[Android Hook 从零部署操作手册](./docs/android/quickstart.md)顺序执行，不要只在平板上
+安装 Agent。Windows 阶段的主要命令是：
 
 ```powershell
 .\feagle.cmd android bootstrap-tools -AcceptAndroidSdkLicense
 .\feagle.cmd android doctor
 .\feagle.cmd android verify-wechat
 .\feagle.cmd android build-agent
+.\feagle.cmd android install-agent -ConfirmAgentInstall
+.\feagle.cmd android agent-status
 ```
 
-工具不会替用户 Root、不会静默卸载微信，也不会安装未经指纹验证的 APK。完整步骤见
-[Android 接入工具](./docs/android/index.md)。
+完成模块启用后，还需要通过 `pair-agent` 把平板与服务器一次性配对。工具不会替用户
+Root、不会静默卸载微信，也不会安装未经指纹验证的 APK。
 
 Windows 上的 Dashboard SSH 隧道仍可通过以下命令管理：
 

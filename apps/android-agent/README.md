@@ -133,8 +133,12 @@ Agent 页面填写：
 
 ```text
 Endpoint: wss://你的域名/android
-Token:    ANDROID_BRIDGE_TOKEN 的值
+配对码:   由 Windows pair-agent 命令生成的 8 位一次性短码
 ```
+
+Agent 0.5.1 及以上版本不需要手工复制 `ANDROID_BRIDGE_TOKEN`。Windows 配对助手通过
+SSH 在服务器生成短码并自动预填到平板；短码兑换成功后，长期设备 Token 只保存在
+Android 应用私有目录中。
 
 ### 方案 B：Tailscale 私网
 

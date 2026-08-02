@@ -1,8 +1,13 @@
-# Android 接入工具
+# Android 接入文档
 
-[返回项目首页](../../README.md) · [设备要求](./01-device-requirements.md) ·
+[返回项目首页](../../README.md) · [从零操作手册](./quickstart.md) ·
+[设备要求](./01-device-requirements.md) ·
 [微信版本验证](./02-wechat-8070-install.md) · [Windows 工具链](./03-windows-toolchain.md) ·
 [Agent 构建与配对](./04-agent-build-install.md)
+
+> [!IMPORTANT]
+> 第一次部署请直接阅读[《Android Hook 从零部署操作手册》](./quickstart.md)，按照
+> “服务器 → Windows → 平板”的顺序完成。下面四篇文章是专题参考，不是四套独立教程。
 
 Android 模式由同一仓库中的两个独立模块组成：
 
@@ -26,7 +31,7 @@ apps/android-agent/     运行在已 Root Android 设备上的 Agent 与适配�
 
 其他设备可以参与适配，但在真实验证前应显示为“未经验证”，不能向新手承诺兼容。
 
-## Windows 快速入口
+## 命令速查
 
 在 Monorepo 根目录打开 PowerShell：
 
@@ -38,9 +43,12 @@ apps/android-agent/     运行在已 Root Android 设备上的 Agent 与适配�
 .\feagle.cmd android install-agent -ConfirmAgentInstall
 .\feagle.cmd android agent-status
 .\feagle.cmd android pair-agent `
-  -ServerHost your-server.example.com `
-  -BridgeEndpoint wss://bot.example.com/android
+  -ServerHost YOUR_ECS_PUBLIC_IP `
+  -BridgeEndpoint ws://100.x.y.z:6191/android
 ```
+
+`ServerHost` 是 Windows 用来 SSH 登录 ECS 的地址；`BridgeEndpoint` 是平板访问 Bridge
+的地址，二者不是同一个概念。完整网络选择与预期状态见[从零操作手册](./quickstart.md)。
 
 也可以直接调用底层工具：
 

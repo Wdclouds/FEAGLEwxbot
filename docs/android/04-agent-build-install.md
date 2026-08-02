@@ -1,6 +1,6 @@
 # Android Agent 构建、安装与状态检查
 
-[返回 README](../README.md) ·
+[返回 README](../../README.md) · [从零操作手册](./quickstart.md) ·
 [Windows 工具链一键准备](./03-windows-toolchain.md)
 
 ## 1. 当前支持范围
@@ -82,7 +82,7 @@ ADB 会拒绝更新，向导不会为了绕过错误而自动卸载。
 2. 模块作用域只选择微信。
 3. 重启微信。
 4. 完成下一节的一次性配对。
-6. 只有确实需要通知兜底时，才手动开启通知读取权限。
+5. 只有确实需要通知兜底时，才手动开启通知读取权限。
 
 向导不会静默开启模块、修改作用域、授予通知读取权限或读取设备 Token。
 
@@ -92,10 +92,14 @@ ADB 会拒绝更新，向导不会为了绕过错误而自动卸载。
 
 ```powershell
 .\tools\windows-android\feagle-android.ps1 pair-agent `
-  -ServerHost your-server.example.com `
+  -ServerHost YOUR_ECS_PUBLIC_IP `
   -SshUser root `
-  -BridgeEndpoint wss://bot.example.com/android
+  -BridgeEndpoint ws://100.x.y.z:6191/android
 ```
+
+`ServerHost` 是 Windows 的 SSH 目标，通常是 ECS 公网 IP；`BridgeEndpoint` 是平板的
+消息连接地址，Tailscale 方案必须填写 ECS 的 `100.x.y.z` 私网地址。标准 WSS 用户把
+Endpoint 改为 `wss://bot.example.com/android`。完整选择见[从零操作手册](./quickstart.md)。
 
 Tailscale 私网可以把 Endpoint 改成服务器的 `100.64.0.0/10` 地址：
 
@@ -113,6 +117,9 @@ FEAGLE Agent 自身；不会停止微信，也不会清除 Agent 数据或模块
 
 如果设备配对成功后云端连接显示 `1008`，检查 Bridge `.env` 里是否还保留着重装前的
 `ANDROID_DEVICE_ID`。应更新为当前 Agent 页面显示的设备 ID，再只重建 bot 容器。
+
+如果显示 `invalid_or_expired_code`，该短码已经过期或被使用。重新运行 `pair-agent`
+生成新码，不要重复点击旧码。配对成功后短码输入框自动清空属于正常行为。
 
 配对成功后，Agent 自动保存随机设备 Token、清除短码并重连。Token 保存在 Android
 应用私有目录；服务器 SQLite 只保存其 HMAC 摘要。旧版 Agent 的已有 Token 可以

@@ -1,6 +1,6 @@
 # Windows 工具链一键准备
 
-[返回 README](../README.md) ·
+[返回 README](../../README.md) · [从零操作手册](./quickstart.md) ·
 [设备与 Root 前置条件](./01-device-requirements.md)
 
 ## 1. 它会准备什么

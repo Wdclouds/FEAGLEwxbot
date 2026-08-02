@@ -1,6 +1,6 @@
 # 设备与 Root 前置条件
 
-[返回 README](../README.md) ·
+[返回 README](../../README.md) · [从零操作手册](./quickstart.md) ·
 [下一步：微信 8.0.70 安装与验证](./02-wechat-8070-install.md)
 
 ## 1. 首期支持范围

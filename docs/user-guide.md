@@ -365,6 +365,9 @@ Android，避免重启后进入不可用状态。
 Android Agent 是高级可选接入。当前验证基线为 Android 14、Magisk/Zygisk、
 LSPosed/Vector 和微信 `8.0.70`。Agent 0.6.0 增加受控群聊文本收发；通知兜底仍只处理私聊。
 
+第一次从零部署不要只阅读本节环境变量参考，请直接按照
+[Android Hook 从零部署操作手册](./android/quickstart.md)完成服务器、Windows 与平板三端。
+
 服务器 `.env`：
 
 ```dotenv

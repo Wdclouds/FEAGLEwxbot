@@ -9,5 +9,7 @@
 .\feagle.cmd android doctor
 ```
 
-完整说明见 [`docs/android/index.md`](../../docs/android/index.md)。运行时下载、APK、设备
+第一次部署请从
+[`docs/android/quickstart.md`](../../docs/android/quickstart.md)开始；命令参考见
+[`docs/android/index.md`](../../docs/android/index.md)。运行时下载、APK、设备
 状态和诊断输出只保存在被 Git 忽略的本地目录中。
