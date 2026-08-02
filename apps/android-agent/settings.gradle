@@ -1,0 +1,29 @@
+pluginManagement {
+    repositories {
+        if (System.getenv("CI") == null && System.getenv("FEAGLE_USE_OFFICIAL_REPOS") != "1") {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        }
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        if (System.getenv("CI") == null && System.getenv("FEAGLE_USE_OFFICIAL_REPOS") != "1") {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/public") }
+        }
+        google()
+        mavenCentral()
+        maven { url = uri("https://api.xposed.info/") }
+    }
+}
+
+rootProject.name = "FEAGLEwxbot-Android"
+include(":app")

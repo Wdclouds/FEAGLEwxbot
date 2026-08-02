@@ -1,0 +1,8 @@
+{
+  "protocol": "feagle.android.v1",
+  "type": "send_text",
+  "commandId": "example-command-1",
+  "chatType": "private",
+  "talker": "example-wxid",
+  "content": "这是一条示例回复"
+}

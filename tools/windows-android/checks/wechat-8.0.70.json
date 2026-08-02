@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "status": "reference-verified",
+  "packageName": "com.tencent.mm",
+  "versionName": "8.0.70",
+  "versionCode": 3060,
+  "supportedAbis": [
+    "arm64-v8a"
+  ],
+  "artifactType": "single-base-apk",
+  "artifactSizeBytes": 255119524,
+  "downloadUrl": null,
+  "fileSha256": "65808aa07d48d2ee2079ee4b1abfda3ca318482259f19a4d942bee0372f61079",
+  "signingCertificateSha256": "0fe4ff85c215918396dadc7cd8ce6963339af33d37751a56e54c7206b63a3c7c",
+  "signingCertificateSubject": "CN=Tencent, OU=Tencent Guangzhou Research and Development Center, O=Tencent Technology(Shenzhen) Company Limited, L=Shenzhen, ST=Guangdong, C=86",
+  "verifiedAt": "2026-07-31",
+  "candidateSources": [
+    {
+      "name": "APKMirror",
+      "pageUrl": "https://www.apkmirror.com/apk/wechat/wechat/wechat-8-0-70-release/wechat-8-0-70-android-apk-download/",
+      "thirdParty": true,
+      "reportedVersionCode": 3060,
+      "reportedArtifactSizeBytes": 255119524,
+      "reportedFileSha256": "65808aa07d48d2ee2079ee4b1abfda3ca318482259f19a4d942bee0372f61079",
+      "reportedSigningCertificateSha256": "0fe4ff85c215918396dadc7cd8ce6963339af33d37751a56e54c7206b63a3c7c",
+      "metadataMatchesReference": true,
+      "downloadVerifiedLocally": false,
+      "checkedAt": "2026-07-31"
+    }
+  ],
+  "verifiedDeviceProfile": {
+    "model": "SM-X200",
+    "androidVersion": "14"
+  },
+  "notes": [
+    "Reference metadata was extracted from the validated installed package; no APK is stored in this repository.",
+    "A third-party candidate page reports matching fingerprints but has not been independently downloaded by the setup tool.",
+    "Do not publish a download URL until a separately downloaded candidate matches every fingerprint.",
+    "The repository does not host or redistribute WeChat APK files."
+  ]
+}

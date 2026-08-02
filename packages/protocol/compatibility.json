@@ -1,0 +1,8 @@
+{
+  "productVersion": "0.6.0",
+  "protocol": "feagle.android.v1",
+  "bridgeVersion": "0.5.0",
+  "androidAgentVersion": "0.6.0",
+  "minimumAndroidAgentVersion": "0.6.0",
+  "wechatBaseline": "8.0.70"
+}

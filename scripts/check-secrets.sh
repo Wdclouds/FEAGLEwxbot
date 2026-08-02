@@ -9,7 +9,7 @@ failures=0
 
 for path in "${files[@]}"; do
   case "$path" in
-    .env|.env.*|bot/.env|data/*|bot/data/*|*/session.json|*.db|*.sqlite|*.pem|*.key)
+    .env|.env.*|apps/bridge/.env|data/*|apps/bridge/data/*|downloads/*|diagnostics/*|device-state.json|pairing.json|*/session.json|*.db|*.sqlite|*.pem|*.key|*.token|*.apk|*.apks|*.xapk)
       if [[ "$path" != ".env.example" ]]; then
         printf '禁止提交敏感或运行时文件：%s\n' "$path" >&2
         failures=$((failures + 1))

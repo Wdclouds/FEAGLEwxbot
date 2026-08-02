@@ -211,7 +211,7 @@ esac
 
 printf '\n选择微信接入方式：\n'
 printf '  1) Wechat4u 扫码登录（简单，但受 Web 微信可用性影响）\n'
-printf '  2) Android Hook Agent（推荐备用机，需要单独运行 Android Kit）\n'
+printf '  2) Android Hook Agent（推荐备用机，使用本仓库 Windows 工具）\n'
 read -r -p "请选择 [1-2]: " transport_choice
 
 wechat_transport=wechat4u
@@ -387,13 +387,13 @@ chmod 700 "$PROJECT_DIR/data"
 
 printf '\n配置已安全写入 .env（权限 600）。\n'
 if [[ "$wechat_transport" == android ]]; then
-  printf 'Android 模式下一步：在 Windows 电脑克隆 FEAGLEwxbot-android-kit，\n'
-  printf '连接已 Root 的设备，按向导构建、安装并执行一次性配对。\n'
+  printf 'Android 模式下一步：在 Windows 电脑打开当前 FEAGLEwxbot 仓库，\n'
+  printf '连接已 Root 的设备，运行 .\\feagle.cmd android doctor，然后按向导构建、安装并配对。\n'
 fi
 "$PROJECT_DIR/scripts/doctor.sh"
 "$PROJECT_DIR/scripts/fetch-astrbot.sh"
 
 read -r -p "是否现在构建并启动机器人？[Y/n]: " start_now
 if [[ ! "$start_now" =~ ^[Nn]$ ]]; then
-  "$PROJECT_DIR/wxbot-bridge" start
+  "$PROJECT_DIR/feagle" bridge start
 fi

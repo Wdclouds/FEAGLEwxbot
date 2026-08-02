@@ -35,9 +35,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cp "$PROJECT_DIR/bot/package.json" "$work_dir/package.json"
-cp "$PROJECT_DIR/bot/package-lock.json" "$work_dir/package-lock.json"
-cp "$PROJECT_DIR/bot/src/feishu-register-cli.js" "$work_dir/feishu-register-cli.js"
+cp "$PROJECT_DIR/apps/bridge/package.json" "$work_dir/package.json"
+cp "$PROJECT_DIR/apps/bridge/package-lock.json" "$work_dir/package-lock.json"
+cp "$PROJECT_DIR/apps/bridge/src/feishu-register-cli.js" "$work_dir/feishu-register-cli.js"
 
 printf '正在准备飞书官方扫码配置工具...\n'
 docker run --rm -i \

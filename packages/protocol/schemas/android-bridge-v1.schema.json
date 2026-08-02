@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Wdclouds/FEAGLEwxbot-bridge/packages/protocol/schemas/android-bridge-v1.schema.json",
+  "title": "FEAGLE Android Agent to Bridge protocol v1",
+  "type": "object",
+  "required": ["protocol", "type"],
+  "properties": {
+    "protocol": { "const": "feagle.android.v1" },
+    "type": {
+      "enum": [
+        "pair_request", "pair_ack", "pair_rejected",
+        "hello", "hello_ack", "heartbeat", "pong", "hook_status",
+        "private_text", "group_text", "event_ack", "event_nack",
+        "send_text", "command_result"
+      ]
+    },
+    "deviceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "eventId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "commandId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "talker": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "sender": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "displayName": { "type": "string", "maxLength": 256 },
+    "content": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "chatType": { "enum": ["private", "group"] },
+    "mentioned": { "type": "boolean" },
+    "createTime": { "type": "integer", "minimum": 0 },
+    "msgId": { "type": "integer", "minimum": 0 },
+    "msgSvrId": { "type": "integer", "minimum": 0 },
+    "timestamp": { "type": "integer", "minimum": 0 },
+    "connected": { "type": "boolean" },
+    "hookConnected": { "type": "boolean" },
+    "wechatVersion": { "type": "string" },
+    "accepted": { "type": "boolean" },
+    "ok": { "type": "boolean" },
+    "error": { "type": "string" },
+    "reason": { "type": "string" },
+    "retryAfterMs": { "type": "integer", "minimum": 0 },
+    "heartbeatTimeoutMs": { "type": "integer", "minimum": 1 },
+    "pairingCode": { "type": "string", "pattern": "^[0-9]{8}$" },
+    "token": { "type": "string", "minLength": 24 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "private_text" } } },
+      "then": { "required": ["deviceId", "eventId", "talker", "content"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "group_text" } } },
+      "then": { "required": ["deviceId", "eventId", "talker", "sender", "content", "mentioned"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "send_text" } } },
+      "then": { "required": ["commandId", "chatType", "talker", "content"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "event_ack" } } },
+      "then": { "required": ["eventId"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "event_nack" } } },
+      "then": { "required": ["eventId", "retryAfterMs", "reason"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "command_result" } } },
+      "then": { "required": ["deviceId", "commandId", "ok"] }
+    }
+  ],
+  "additionalProperties": true
+}

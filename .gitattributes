@@ -1,8 +1,20 @@
 * text=auto
+
 *.sh text eol=lf
+feagle text eol=lf
 wxbot-bridge text eol=lf
-Dockerfile text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
+gradlew text eol=lf
+*.gradle text eol=lf
+*.java text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.md text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+VERSION text eol=lf
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
+*.bat text eol=crlf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

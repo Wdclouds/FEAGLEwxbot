@@ -2,26 +2,26 @@
 .env
 .env.*
 !.env.example
-bot/.env
+apps/bridge/.env
 
 # Runtime state and credentials
 data/
-bot/data/
-bot/downloads/
-bot/tools/
-bot/AstrBot/
+apps/bridge/data/
+apps/bridge/downloads/
+apps/bridge/tools/
+apps/bridge/AstrBot/
 
 # Dependencies and build output
 node_modules/
-bot/node_modules/
-bot/.smoke-status.json
+apps/bridge/node_modules/
+apps/bridge/.smoke-status.json
 __pycache__/
 *.py[cod]
 coverage/
 dist/
-android/.gradle/
-android/**/build/
-android/local.properties
+apps/android-agent/.gradle/
+apps/android-agent/**/build/
+apps/android-agent/local.properties
 *.apk
 *.log
 npm-debug.log*
@@ -34,6 +34,11 @@ Thumbs.db
 
 # Local overrides and archives
 .tools/
+downloads/
+diagnostics/
+device-state.json
+pairing.json
+*.token
 frida/
 compose.override.yml
 docker-compose.override.yml
