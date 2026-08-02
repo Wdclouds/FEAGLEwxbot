@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { RuntimeState } from '../src/state.js';
 import { DashboardServer } from '../src/dashboard.js';
 
+const mutationHeaders = {
+  'Content-Type': 'application/json',
+  'X-FEAGLE-Dashboard': '1',
+};
+
 test('dashboard test-mode endpoint toggles the schedule override', async (t) => {
   const state = new RuntimeState();
   const dashboard = new DashboardServer({
@@ -20,7 +25,7 @@ test('dashboard test-mode endpoint toggles the schedule override', async (t) => 
   const { port } = dashboard.server.address();
   const enableResponse = await fetch(`http://127.0.0.1:${port}/api/test-mode`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutationHeaders,
     body: JSON.stringify({ enabled: true }),
   });
   assert.equal(enableResponse.status, 200);
@@ -30,7 +35,7 @@ test('dashboard test-mode endpoint toggles the schedule override', async (t) => 
 
   const disableResponse = await fetch(`http://127.0.0.1:${port}/api/test-mode`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutationHeaders,
     body: JSON.stringify({ enabled: false }),
   });
   assert.equal(disableResponse.status, 200);
@@ -88,6 +93,7 @@ test('dashboard sends a Feishu notification test through a POST-only endpoint', 
 
   const response = await fetch(`http://127.0.0.1:${port}/api/notifications/test`, {
     method: 'POST',
+    headers: { 'X-FEAGLE-Dashboard': '1' },
   });
   assert.equal(response.status, 200);
   const payload = await response.json();
@@ -120,7 +126,7 @@ test('dashboard force-relogin endpoint requires explicit confirmation', async (t
 
   const rejected = await fetch(`http://127.0.0.1:${port}/api/wechat/force-relogin`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutationHeaders,
     body: JSON.stringify({ confirm: 'no' }),
   });
   assert.equal(rejected.status, 400);
@@ -128,7 +134,7 @@ test('dashboard force-relogin endpoint requires explicit confirmation', async (t
 
   const accepted = await fetch(`http://127.0.0.1:${port}/api/wechat/force-relogin`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutationHeaders,
     body: JSON.stringify({ confirm: 'FORCE_LOGOUT' }),
   });
   assert.equal(accepted.status, 202);
@@ -160,7 +166,7 @@ test('dashboard persists an explicitly confirmed manual-offline mode', async (t)
   const { port } = dashboard.server.address();
   const rejected = await fetch(`http://127.0.0.1:${port}/api/wechat/admin-mode`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutationHeaders,
     body: JSON.stringify({ mode: 'MANUAL_OFFLINE' }),
   });
   assert.equal(rejected.status, 400);
@@ -168,7 +174,7 @@ test('dashboard persists an explicitly confirmed manual-offline mode', async (t)
 
   const accepted = await fetch(`http://127.0.0.1:${port}/api/wechat/admin-mode`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutationHeaders,
     body: JSON.stringify({
       mode: 'MANUAL_OFFLINE',
       confirm: 'MANUAL_OFFLINE',
@@ -200,7 +206,7 @@ test('dashboard group reply mode is fail-closed and requires confirmation', asyn
 
   const rejected = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutationHeaders,
     body: JSON.stringify({ mode: 'MENTION_ONLY', allowlist: ['1001'] }),
   });
   assert.equal(rejected.status, 400);
@@ -208,7 +214,7 @@ test('dashboard group reply mode is fail-closed and requires confirmation', asyn
 
   const accepted = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutationHeaders,
     body: JSON.stringify({
       mode: 'MENTION_ONLY',
       allowlist: ['1001', 'bad', 1002],
@@ -222,4 +228,44 @@ test('dashboard group reply mode is fail-closed and requires confirmation', asyn
     allowlist: ['1001', '1002'],
     blockedTerms: ['risk'],
   }]);
+});
+
+test('dashboard settings API hides secrets and protects mutations', async (t) => {
+  const state = new RuntimeState();
+  let settings = { transport: 'wechat4u', quietHours: '00:00-07:00' };
+  const dashboard = new DashboardServer({
+    state,
+    host: '127.0.0.1',
+    port: 0,
+    getBridgeSettings: () => settings,
+    saveBridgeSettings(changes) {
+      settings = { ...settings, ...changes };
+      return { settings };
+    },
+  });
+  await dashboard.start();
+  t.after(() => dashboard.stop());
+  const { port } = dashboard.server.address();
+  const url = `http://127.0.0.1:${port}/api/settings`;
+
+  const readable = await fetch(url);
+  assert.equal(readable.status, 200);
+  const readPayload = await readable.json();
+  assert.deepEqual(readPayload.settings, settings);
+  assert.equal(JSON.stringify(readPayload).includes('API_KEY'), false);
+
+  const forbidden = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quietHours: '01:00-06:00' }),
+  });
+  assert.equal(forbidden.status, 403);
+
+  const accepted = await fetch(url, {
+    method: 'PUT',
+    headers: mutationHeaders,
+    body: JSON.stringify({ quietHours: '01:00-06:00' }),
+  });
+  assert.equal(accepted.status, 202);
+  assert.equal((await accepted.json()).settings.quietHours, '01:00-06:00');
 });

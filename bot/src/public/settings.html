@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>FEAGLE WxBot 设置 / Settings</title>
+  <script>
+    document.documentElement.dataset.theme =
+      localStorage.getItem('feagle-theme') ||
+      (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  </script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="ambient-grid" aria-hidden="true"></div>
+  <main class="settings-shell">
+    <header class="topbar">
+      <div class="brand">
+        <p class="eyebrow">FEAGLE WXBOT · SAFE CONFIGURATION</p>
+        <h1>Bridge 设置 <span>/ Settings</span></h1>
+        <p class="subtitle">通道、休眠与流量安全参数 / Transport, schedule & traffic safety</p>
+      </div>
+      <div class="header-tools">
+        <nav class="page-nav" aria-label="Dashboard navigation">
+          <a href="/">状态 / Status</a>
+          <a class="active" href="/settings.html">设置 / Settings</a>
+        </nav>
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="切换主题">
+          <span id="theme-icon">☾</span><span id="theme-label">夜间 / Dark</span>
+        </button>
+      </div>
+    </header>
+
+    <section class="panel settings-intro">
+      <strong>这里仅显示可安全修改的 Bridge 参数 / Safe settings only</strong>
+      <p>保存后容器内 Bridge 会自动重启，AstrBot 数据、Wechat4u Session、ID 映射和安卓配对均保留。联系人跨通道不会按昵称自动合并，以避免串错会话。</p>
+      <p>Saving restarts the Bridge process without clearing persistent data. Cross-transport peers are never merged by display name.</p>
+    </section>
+
+    <form id="settings-form" class="settings-form">
+      <section class="panel settings-section" id="transport">
+        <div class="panel-title"><span class="section-number">01</span><div><strong>消息通道</strong><small>TRANSPORT</small></div><span class="mode-badge" id="active-transport">--</span></div>
+        <div class="section-body">
+          <div class="transport-options">
+            <label class="transport-card">
+              <input type="radio" name="transport" value="wechat4u">
+              <strong>Wechat4u Web</strong>
+              <small>网页协议、Dashboard 二维码、保留现有 Web Session。</small>
+            </label>
+            <label class="transport-card">
+              <input type="radio" name="transport" value="android">
+              <strong>Android Hook</strong>
+              <small>Agent 反向 WSS、设备心跳、私聊与白名单群聊。</small>
+            </label>
+          </div>
+          <div class="button-row" style="margin-top:10px">
+            <button class="button blue" id="switch-transport" type="button">切换并重启 / Switch & restart</button>
+          </div>
+          <p class="control-note" id="transport-hint">切换不会清空任何持久化数据 / Persistent data is preserved.</p>
+        </div>
+      </section>
+
+      <section class="panel settings-section">
+        <div class="panel-title"><span class="section-number">02</span><div><strong>时间计划</strong><small>SCHEDULE</small></div></div>
+        <div class="section-body field-grid">
+          <div class="field"><label for="quietHours">休眠时段 / QUIET HOURS</label><input id="quietHours" data-setting="quietHours" placeholder="00:00-07:00" required></div>
+          <div class="field"><label for="timezone">时区 / TIMEZONE</label><input id="timezone" data-setting="timezone" placeholder="Asia/Shanghai" required></div>
+        </div>
+      </section>
+
+      <section class="panel settings-section">
+        <div class="panel-title"><span class="section-number">03</span><div><strong>私聊流量保护</strong><small>PRIVATE TRAFFIC</small></div></div>
+        <div class="section-body field-grid">
+          <div class="field"><label>单条最大字符 / MAX CHARS</label><input type="number" data-setting="maxMessageChars" min="100" max="10000"></div>
+          <div class="field"><label>同一用户窗口内上限 / USER LIMIT</label><input type="number" data-setting="userRateLimit" min="1" max="100"></div>
+          <div class="field"><label>用户窗口（秒）/ USER WINDOW</label><input type="number" data-setting="userRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+          <div class="field"><label>全局窗口内上限 / GLOBAL LIMIT</label><input type="number" data-setting="globalRateLimit" min="1" max="1000"></div>
+          <div class="field"><label>全局窗口（秒）/ GLOBAL WINDOW</label><input type="number" data-setting="globalRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+          <div class="field"><label>AstrBot 并发总数 / MAX IN-FLIGHT</label><input type="number" data-setting="maxInFlight" min="1" max="100"></div>
+          <div class="field"><label>单用户并发 / PER USER IN-FLIGHT</label><input type="number" data-setting="maxInFlightPerUser" min="1" max="20"></div>
+        </div>
+      </section>
+
+      <section class="panel settings-section">
+        <div class="panel-title"><span class="section-number">04</span><div><strong>群聊安全</strong><small>GROUP SAFETY</small></div></div>
+        <div class="section-body field-grid">
+          <div class="field"><label>回复冷却（秒）/ COOLDOWN</label><input type="number" data-setting="groupReplyCooldownMs" data-scale="1000" min="0" max="3600"></div>
+          <div class="field"><label>回复最大字符 / REPLY MAX CHARS</label><input type="number" data-setting="groupReplyMaxChars" min="1" max="2000"></div>
+          <div class="field"><label>随机延迟最小（秒）/ JITTER MIN</label><input type="number" data-setting="groupJitterMinMs" data-scale="1000" min="0" max="60" step="0.1"></div>
+          <div class="field"><label>随机延迟最大（秒）/ JITTER MAX</label><input type="number" data-setting="groupJitterMaxMs" data-scale="1000" min="0" max="60" step="0.1"></div>
+          <div class="field"><label>单成员窗口上限 / MEMBER LIMIT</label><input type="number" data-setting="groupMemberRateLimit" min="1" max="100"></div>
+          <div class="field"><label>成员窗口（秒）/ MEMBER WINDOW</label><input type="number" data-setting="groupMemberRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+          <div class="field"><label>单群窗口上限 / GROUP LIMIT</label><input type="number" data-setting="groupRateLimit" min="1" max="1000"></div>
+          <div class="field"><label>群窗口（秒）/ GROUP WINDOW</label><input type="number" data-setting="groupRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+        </div>
+      </section>
+    </form>
+
+    <aside class="privacy-note">敏感配置不会显示在此页：大模型 API Key 请在 AstrBot WebUI 管理；飞书 Secret 和 Android Token 请继续使用安装向导或服务器环境变量。<br>Secrets are intentionally excluded from Dashboard APIs.</aside>
+
+    <div class="settings-actions">
+      <p id="save-status">修改只在点击保存后生效 / Changes apply after save.</p>
+      <button class="button blue" id="save-settings" type="button">保存并重启 / Save & restart</button>
+    </div>
+  </main>
+  <script src="/settings.js"></script>
+</body>
+</html>

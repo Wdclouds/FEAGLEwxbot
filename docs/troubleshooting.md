@@ -451,6 +451,21 @@ OneBot 和 AstrBot 状态。
 不要仅凭“平板微信收到消息”就判断 Hook 正常，也不要仅凭 ACK 判断模型已经回复。
 每个状态只证明它所在的那一段。
 
+### TRB-014A：Android 私聊正常，但群里不回复
+
+先在 Dashboard 确认 Android 设备、Hook 与心跳均为已连接，然后按顺序检查：
+
+1. Agent 版本至少为 `0.6.0`，Bridge 版本至少为 `0.5.0`。
+2. 群聊模式不是 `OFF`；建议先用 `OBSERVE` 让目标群出现在“已发现群聊”。
+3. 使用 Dashboard 显示的 OneBot 数字群 ID 加入白名单，不要填写 `@chatroom` 原始值。
+4. 切换 `MENTION_ONLY` 后，测试消息必须明确 `@` 当前微信账号。
+5. 消息概览若显示 `GROUP-NOT-MENTIONED`，说明 Hook 没有确认 `@` 标记；系统会保持
+   静默，不能通过关闭这道校验来“修复”。先保存脱敏的 FEAGLE 状态日志再报告适配问题。
+6. 若 AstrBot 已收到但 Agent 没有发送，检查 `GROUP_REPLY_COOLDOWN`、限流、熔断和
+   本地拦截词状态。
+
+通知读取兜底仍只支持私聊，不能用通知权限替代群聊 Hook 主链。
+
 ### TRB-015：飞书绑定或通知没有反应
 
 **检查**

@@ -15,6 +15,7 @@ import {
 } from './control-state.js';
 import { GROUP_CHAT_MODES } from './group-chat.js';
 import { GroupSafetyGate } from './group-safety.js';
+import { BridgeSettingsStore } from './bridge-settings.js';
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -30,6 +31,16 @@ function userIdSet(value) {
 }
 
 const state = new RuntimeState();
+const settingsStore = new BridgeSettingsStore({
+  path: process.env.BRIDGE_SETTINGS_PATH || '/app/data/bridge-settings.json',
+});
+let settings;
+try {
+  settings = settingsStore.load();
+} catch (error) {
+  state.addError('bridge-settings-load', error);
+  settings = settingsStore.snapshot();
+}
 const controlStore = new PersistentControlState({
   path: process.env.BOT_CONTROL_STATE_PATH || '/app/data/control-state.json',
 });
@@ -54,8 +65,12 @@ state.patch('groupChat', {
   allowlist: savedControl.groupAllowlist,
   blockedTerms: savedControl.groupBlockedTerms,
 });
-const quietRange = parseQuietHours(process.env.BOT_QUIET_HOURS || '00:00-07:00');
-const timezone = process.env.BOT_TIMEZONE || 'Asia/Shanghai';
+const quietRange = parseQuietHours(settings.quietHours);
+const timezone = settings.timezone;
+state.patch('schedule', {
+  timezone,
+  quietHours: settings.quietHours,
+});
 let testMode = false;
 const sleeping = () => !testMode && isQuietTime(new Date(), quietRange, timezone);
 
@@ -115,11 +130,44 @@ const dashboard = new DashboardServer({
     controlStore.saveGroupChatConfig(mode, allowlist, blockedTerms);
     return wechat.setGroupChatConfig(mode, allowlist, blockedTerms);
   },
+  getBridgeSettings: () => settingsStore.snapshot(),
+  saveBridgeSettings: (changes) => {
+    const saved = settingsStore.save(changes);
+    state.patch('transport', {
+      requested: saved.transport,
+      switching: true,
+      restartRequired: true,
+      detail: '设置已保存，Bridge 正在重启 / Restarting',
+    });
+    setTimeout(() => shutdown('DASHBOARD_SETTINGS_RESTART', 0), 500).unref();
+    return { settings: saved, state: state.snapshot() };
+  },
+  switchTransport: (nextTransport) => {
+    if (
+      nextTransport === 'android'
+      && String(process.env.ANDROID_BRIDGE_TOKEN || '').trim().length < 24
+    ) {
+      throw new Error('Android 配对密钥未配置，请先运行 ./wxbot-bridge setup');
+    }
+    const saved = settingsStore.save({ transport: nextTransport });
+    state.patch('transport', {
+      requested: saved.transport,
+      switching: true,
+      restartRequired: true,
+      detail: '正在切换消息通道 / Switching transport',
+    });
+    setTimeout(() => shutdown('DASHBOARD_TRANSPORT_SWITCH', 0), 500).unref();
+    return { settings: saved, state: state.snapshot() };
+  },
 });
 const idMap = new IdMap();
 idMap.pruneMessageReceipts();
 const groupSafety = new GroupSafetyGate({
   blockedTerms: savedControl.groupBlockedTerms,
+  memberLimit: settings.groupMemberRateLimit,
+  memberWindowMs: settings.groupMemberRateWindowMs,
+  groupLimit: settings.groupRateLimit,
+  groupWindowMs: settings.groupRateWindowMs,
   onChange: (fuses) => state.patch('groupChat', { fuses }),
   onFuse: (fuse) => {
     state.incrementGroup('fused');
@@ -132,20 +180,30 @@ const groupSafety = new GroupSafetyGate({
 });
 const astrbot = new AstrBotSupervisor({ state });
 const messageGuard = new MessageGuard({
-  maxCodePoints: positiveInteger(process.env.BOT_MAX_MESSAGE_CHARS, 2_000),
+  maxCodePoints: settings.maxMessageChars,
   duplicateTtlMs: positiveInteger(process.env.BOT_DUPLICATE_TTL_MS, 5 * 60_000),
-  perUserLimit: positiveInteger(process.env.BOT_USER_RATE_LIMIT, 3),
-  perUserWindowMs: positiveInteger(process.env.BOT_USER_RATE_WINDOW_MS, 30_000),
-  globalLimit: positiveInteger(process.env.BOT_GLOBAL_RATE_LIMIT, 30),
-  globalWindowMs: positiveInteger(process.env.BOT_GLOBAL_RATE_WINDOW_MS, 60_000),
+  perUserLimit: settings.userRateLimit,
+  perUserWindowMs: settings.userRateWindowMs,
+  globalLimit: settings.globalRateLimit,
+  globalWindowMs: settings.globalRateWindowMs,
   allowUserIds: userIdSet(process.env.BOT_ALLOW_USER_IDS),
   blockUserIds: userIdSet(process.env.BOT_BLOCK_USER_IDS),
 });
 
 let onebot;
-const transport = String(process.env.WECHAT_TRANSPORT || 'wechat4u')
-  .trim()
-  .toLocaleLowerCase();
+const transport = settings.transport;
+state.patch('transport', {
+  active: transport,
+  requested: transport,
+  switching: false,
+  restartRequired: false,
+  detail: transport === 'android'
+    ? 'Android Hook transport'
+    : 'Wechat4u Web transport',
+});
+if (transport !== 'android') {
+  state.patch('android', { serverStatus: 'DISABLED' });
+}
 const commonWechatOptions = {
   state,
   idMap,
@@ -153,6 +211,15 @@ const commonWechatOptions = {
   messageGuard,
   initialAdminMode: savedControl.wechatAdminMode,
   onPrivateText: async (message) => onebot.sendPrivateText(message),
+  onGroupText: async (message) => onebot.sendGroupText(message),
+  initialGroupChatMode: savedControl.groupChatMode,
+  initialGroupAllowlist: savedControl.groupAllowlist,
+  initialGroupBlockedTerms: savedControl.groupBlockedTerms,
+  groupSafety,
+  groupReplyCooldownMs: settings.groupReplyCooldownMs,
+  groupReplyMaxChars: settings.groupReplyMaxChars,
+  groupJitterMinMs: settings.groupJitterMinMs,
+  groupJitterMaxMs: settings.groupJitterMaxMs,
 };
 if (transport === 'android') {
   wechat = new AndroidWechatClient(commonWechatOptions);
@@ -164,21 +231,25 @@ if (transport === 'android') {
       shutdown('WECHAT_WATCHDOG', 1);
     },
     onReloginOutcome: (outcome) => notifier.finishReloginTest(outcome),
-    initialGroupChatMode: savedControl.groupChatMode,
-    initialGroupAllowlist: savedControl.groupAllowlist,
-    initialGroupBlockedTerms: savedControl.groupBlockedTerms,
-    groupSafety,
-    onGroupText: async (message) => onebot.sendGroupText(message),
   });
 } else {
   throw new Error(`Unsupported WECHAT_TRANSPORT: ${transport}`);
 }
 
+const bridgeSelfId = idMap.entity(
+  'self',
+  'feagle:bridge',
+  'feagle:bridge',
+  'FEAGLE WxBot',
+);
 onebot = new OneBotClient({
   state,
   idMap,
   wechat,
+  selfId: bridgeSelfId,
   isSleeping: sleeping,
+  maxInFlight: settings.maxInFlight,
+  maxInFlightPerUser: settings.maxInFlightPerUser,
 });
 
 updateSchedule();

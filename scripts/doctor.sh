@@ -13,6 +13,21 @@ env_value() {
   sed -n "s/^${key}=//p" "$PROJECT_DIR/.env" | tail -n 1
 }
 
+runtime_transport() {
+  local settings_file="$PROJECT_DIR/data/bridge-settings.json"
+  if [[ -f "$settings_file" ]]; then
+    if grep -Eq '"transport"[[:space:]]*:[[:space:]]*"android"' "$settings_file"; then
+      printf 'android\n'
+      return
+    fi
+    if grep -Eq '"transport"[[:space:]]*:[[:space:]]*"wechat4u"' "$settings_file"; then
+      printf 'wechat4u\n'
+      return
+    fi
+  fi
+  env_value WECHAT_TRANSPORT
+}
+
 printf 'FEAGLE WxBot Bridge 环境检查\n'
 
 if command -v docker >/dev/null 2>&1; then
@@ -91,8 +106,11 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
     && ok "AstrBot 源码包校验值已固定" \
     || fail "ASTRBOT_SOURCE_SHA256 不是有效的 SHA-256"
 
-  transport="$(env_value WECHAT_TRANSPORT)"
+  transport="$(runtime_transport)"
   transport="${transport:-wechat4u}"
+  if [[ -f "$PROJECT_DIR/data/bridge-settings.json" ]]; then
+    ok "运行时设置覆盖文件已检测：data/bridge-settings.json"
+  fi
   case "$transport" in
     wechat4u)
       ok "微信接入方式: Wechat4u"

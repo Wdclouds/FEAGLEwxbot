@@ -368,6 +368,20 @@ EOF
 mv "$temporary_env" "$ENV_PATH"
 temporary_env=
 chmod 600 "$ENV_PATH"
+
+# If Dashboard settings already exist, keep its non-setup safety values but
+# make this explicit setup choice authoritative for transport and schedule.
+bridge_settings_path="$PROJECT_DIR/data/bridge-settings.json"
+if [[ -f "$bridge_settings_path" ]]; then
+  temporary_settings="${bridge_settings_path}.setup.tmp"
+  sed -E \
+    -e "s|(\"transport\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"|\1\"$wechat_transport\"|" \
+    -e "s|(\"quietHours\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"|\1\"$quiet_hours\"|" \
+    -e "s|(\"timezone\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"|\1\"$timezone\"|" \
+    "$bridge_settings_path" >"$temporary_settings"
+  mv "$temporary_settings" "$bridge_settings_path"
+  chmod 600 "$bridge_settings_path"
+fi
 mkdir -p "$PROJECT_DIR/data"
 chmod 700 "$PROJECT_DIR/data"
 

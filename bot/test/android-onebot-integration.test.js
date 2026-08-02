@@ -83,6 +83,10 @@ test('Android event reaches AstrBot as a OneBot v11 private message before ACK',
     isSleeping: () => false,
     messageGuard: new MessageGuard(),
     onPrivateText: (message) => onebot.sendPrivateText(message),
+    onGroupText: (message) => onebot.sendGroupText(message),
+    groupJitterMinMs: 0,
+    groupJitterMaxMs: 0,
+    groupReplyCooldownMs: 0,
     host: '127.0.0.1',
     port: 0,
     token: TOKEN,
@@ -100,10 +104,17 @@ test('Android event reaches AstrBot as a OneBot v11 private message before ACK',
   }));
   await waitForAgent((message) => message.type === 'hello_ack');
 
+  const bridgeSelfId = idMap.entity(
+    'self',
+    'feagle:bridge',
+    'feagle:bridge',
+    'FEAGLE WxBot',
+  );
   onebot = new OneBotClient({
     state,
     idMap,
     wechat: android,
+    selfId: bridgeSelfId,
     isSleeping: () => false,
     connectionWaitMs: 3_000,
   });
@@ -138,9 +149,61 @@ test('Android event reaches AstrBot as a OneBot v11 private message before ACK',
   assert.ok(Number.isSafeInteger(onebotEvent.user_id));
   assert.ok(Number.isSafeInteger(onebotEvent.message_id));
   assert.equal(onebotEvent.sender.nickname, 'Integration contact');
+  assert.equal(onebotEvent.self_id, bridgeSelfId);
+  assert.notEqual(onebotEvent.self_id, android.selfId);
 
   const ack = await waitForAgent((message) => message.type === 'event_ack');
   assert.equal(ack.eventId, 'wxsvr:integration-1');
+
+  const groupTalker = 'integration-group@chatroom';
+  const groupId = idMap.entity('group', groupTalker, groupTalker, 'Integration group');
+  android.setGroupChatConfig('MENTION_ONLY', [String(groupId)], []);
+  agent.send(JSON.stringify({
+    type: 'group_text',
+    protocol: 'feagle.android.v1',
+    deviceId: DEVICE_ID,
+    eventId: 'wxsvr:integration-group-1',
+    talker: groupTalker,
+    sender: 'wxid_integration_member',
+    groupName: 'Integration group',
+    displayName: 'Integration member',
+    content: '@FEAGLE group hello',
+    mentioned: true,
+    createTime: Date.now(),
+  }));
+  const groupEvent = await waitForAstrBot(
+    (message) => message.post_type === 'message' && message.message_type === 'group',
+  );
+  assert.equal(groupEvent.group_id, groupId);
+  assert.equal(groupEvent.self_id, bridgeSelfId);
+  assert.equal(groupEvent.message[0].type, 'at');
+  assert.equal(groupEvent.message[0].data.qq, String(bridgeSelfId));
+  assert.equal(
+    (await waitForAgent((message) => message.type === 'event_ack')).eventId,
+    'wxsvr:integration-group-1',
+  );
+
+  astrbot.send(JSON.stringify({
+    action: 'send_group_msg',
+    params: { group_id: groupId, message: 'group response' },
+    echo: 'android-group-response',
+  }));
+  const groupCommand = await waitForAgent(
+    (message) => message.type === 'send_text' && message.chatType === 'group',
+  );
+  assert.equal(groupCommand.talker, groupTalker);
+  assert.equal(groupCommand.content, 'group response');
+  agent.send(JSON.stringify({
+    type: 'command_result',
+    protocol: 'feagle.android.v1',
+    deviceId: DEVICE_ID,
+    commandId: groupCommand.commandId,
+    ok: true,
+  }));
+  const actionResponse = await waitForAstrBot(
+    (message) => message.echo === 'android-group-response',
+  );
+  assert.equal(actionResponse.status, 'ok');
 
   t.after(() => {
     onebot.stop();

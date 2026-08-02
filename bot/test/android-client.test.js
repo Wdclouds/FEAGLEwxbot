@@ -9,6 +9,7 @@ import { AndroidPairingStore } from '../src/android-pairing-store.js';
 import { IdMap } from '../src/id-map.js';
 import { MessageGuard } from '../src/message-guard.js';
 import { RuntimeState } from '../src/state.js';
+import { GroupSafetyGate } from '../src/group-safety.js';
 
 const TOKEN = 'android-test-token-with-at-least-24-characters';
 const DEVICE_ID = 'device-test-1';
@@ -181,6 +182,72 @@ test('Android transport NACKs failed forwarding and accepts the retry', async (t
   agent.socket.send(JSON.stringify(incoming));
   await agent.waitFor((message) => message.type === 'event_ack');
   assert.equal(attempts, 2);
+});
+
+test('Android transport forwards and replies to an allowlisted explicit group mention', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'feagle-android-group-'));
+  const idMap = new IdMap(join(directory, 'mapping.sqlite'));
+  const talker = '987654321@chatroom';
+  const groupId = idMap.entity('group', talker, talker, 'Android test group');
+  const forwarded = [];
+  const groupSafety = new GroupSafetyGate();
+  const client = new AndroidWechatClient({
+    state: new RuntimeState(),
+    idMap,
+    isSleeping: () => false,
+    messageGuard: new MessageGuard(),
+    onPrivateText: async () => {},
+    onGroupText: async (message) => forwarded.push(message),
+    initialGroupChatMode: 'MENTION_ONLY',
+    initialGroupAllowlist: [String(groupId)],
+    groupSafety,
+    groupJitterMinMs: 0,
+    groupJitterMaxMs: 0,
+    groupReplyCooldownMs: 0,
+    host: '127.0.0.1',
+    port: 0,
+    token: TOKEN,
+    pairingDbPath: join(directory, 'pairing.sqlite'),
+  });
+  await client.start();
+  t.after(() => {
+    client.shutdown();
+    groupSafety.stop();
+    idMap.close();
+  });
+
+  const agent = await connectAgent(client.server.address().port);
+  t.after(() => agent.socket.close());
+  agent.socket.send(JSON.stringify(envelope('hello', { hookConnected: true })));
+  await agent.waitFor((message) => message.type === 'hello_ack');
+
+  agent.socket.send(JSON.stringify(envelope('group_text', {
+    eventId: 'wxsvr:group-1',
+    talker,
+    sender: 'wxid_group_member',
+    groupName: 'Android test group',
+    displayName: 'Group member',
+    content: '@FEAGLE hello group',
+    mentioned: true,
+    createTime: Date.now(),
+  })));
+  assert.equal(
+    (await agent.waitFor((message) => message.type === 'event_ack')).eventId,
+    'wxsvr:group-1',
+  );
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].groupId, groupId);
+
+  const reply = client.sendGroupText(groupId, 'group reply');
+  const command = await agent.waitFor((message) => message.type === 'send_text');
+  assert.equal(command.chatType, 'group');
+  assert.equal(command.talker, talker);
+  assert.equal(command.content, 'group reply');
+  agent.socket.send(JSON.stringify(envelope('command_result', {
+    commandId: command.commandId,
+    ok: true,
+  })));
+  assert.equal((await reply).MsgID, command.commandId);
 });
 
 test('Android transport exchanges a one-time code for a device-bound token', async (t) => {

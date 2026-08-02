@@ -2,6 +2,11 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import { WECHAT_ADMIN_MODES } from './control-state.js';
 import { AndroidPairingStore } from './android-pairing-store.js';
+import {
+  GROUP_CHAT_MODES,
+  normalizeGroupAllowlist,
+  normalizeGroupChatMode,
+} from './group-chat.js';
 
 const PROTOCOL = 'feagle.android.v1';
 const TERMINAL_RECEIPT_STATUSES = new Set(['FORWARDED', 'DROPPED', 'BLOCKED']);
@@ -9,6 +14,11 @@ const TERMINAL_RECEIPT_STATUSES = new Set(['FORWARDED', 'DROPPED', 'BLOCKED']);
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function nonNegativeInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function secureEqual(left, right) {
@@ -42,6 +52,22 @@ function validPrivateTalker(value) {
     && (!lower.includes(':') || notificationConversation);
 }
 
+function validGroupTalker(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 256) {
+    return false;
+  }
+  const lower = value.toLocaleLowerCase();
+  return lower.endsWith('@chatroom') && !lower.includes(':');
+}
+
+function validGroupSender(value) {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 256
+    && !value.toLocaleLowerCase().endsWith('@chatroom')
+    && !value.includes(':');
+}
+
 function displayName(value) {
   const normalized = String(value || '').trim();
   if (
@@ -67,12 +93,27 @@ export class AndroidWechatClient {
     isSleeping,
     messageGuard,
     onPrivateText,
+    onGroupText = async () => {},
     host = process.env.ANDROID_WS_HOST || '0.0.0.0',
     port = positiveInteger(process.env.ANDROID_WS_PORT, 6191),
     path = process.env.ANDROID_WS_PATH || '/android',
     token = process.env.ANDROID_BRIDGE_TOKEN || '',
     deviceId = process.env.ANDROID_DEVICE_ID || '',
     initialAdminMode = WECHAT_ADMIN_MODES.RUNNING,
+    initialGroupChatMode = GROUP_CHAT_MODES.OFF,
+    initialGroupAllowlist = [],
+    initialGroupBlockedTerms = [],
+    groupSafety = null,
+    groupReplyCooldownMs = positiveInteger(
+      process.env.BOT_GROUP_REPLY_COOLDOWN_MS,
+      5_000,
+    ),
+    groupReplyMaxChars = positiveInteger(process.env.BOT_MAX_GROUP_REPLY_CHARS, 1_000),
+    groupJitterMinMs = nonNegativeInteger(process.env.BOT_GROUP_JITTER_MIN_MS, 1_000),
+    groupJitterMaxMs = nonNegativeInteger(process.env.BOT_GROUP_JITTER_MAX_MS, 3_000),
+    now = () => Date.now(),
+    random = Math.random,
+    delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     heartbeatTimeoutMs = positiveInteger(
       process.env.ANDROID_HEARTBEAT_TIMEOUT_MS,
       75_000,
@@ -98,12 +139,24 @@ export class AndroidWechatClient {
     this.isSleeping = isSleeping;
     this.messageGuard = messageGuard;
     this.onPrivateText = onPrivateText;
+    this.onGroupText = onGroupText;
     this.host = host;
     this.port = port;
     this.path = path.startsWith('/') ? path : `/${path}`;
     this.token = String(token).trim();
     this.allowedDeviceId = String(deviceId).trim();
     this.adminMode = initialAdminMode;
+    this.groupChatMode = normalizeGroupChatMode(initialGroupChatMode);
+    this.groupAllowlist = new Set(normalizeGroupAllowlist(initialGroupAllowlist));
+    this.groupSafety = groupSafety;
+    this.groupSafety?.setBlockedTerms(initialGroupBlockedTerms);
+    this.groupReplyCooldownMs = groupReplyCooldownMs;
+    this.groupReplyMaxChars = groupReplyMaxChars;
+    this.groupJitterMinMs = Math.min(groupJitterMinMs, groupJitterMaxMs);
+    this.groupJitterMaxMs = Math.max(groupJitterMinMs, groupJitterMaxMs);
+    this.now = now;
+    this.random = random;
+    this.delay = delay;
     this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     this.commandTimeoutMs = commandTimeoutMs;
     this.pairingStore = pairingStore;
@@ -120,7 +173,16 @@ export class AndroidWechatClient {
     this.stopping = false;
     this.processingEvents = new Set();
     this.pendingCommands = new Map();
+    this.lastGroupReplyAt = new Map();
+    this.groupSendQueues = new Map();
     this.watchdog = null;
+    this.state.patch('groupChat', {
+      mode: this.groupChatMode,
+      allowlist: [...this.groupAllowlist],
+      blockedTerms: this.groupSafety?.blockedTerms || [],
+      jitterMinMs: this.groupJitterMinMs,
+      jitterMaxMs: this.groupJitterMaxMs,
+    });
   }
 
   async start() {
@@ -141,6 +203,16 @@ export class AndroidWechatClient {
       detail: '等待 Android Agent 连接',
       protocolHealth: 'UNKNOWN',
       qrDataUrl: '',
+    });
+    this.state.patch('android', {
+      serverStatus: 'STARTING',
+      endpoint: `${this.host}:${this.port}${this.path}`,
+      deviceStatus: 'WAITING',
+      hookConnected: false,
+      deviceIdMasked: '',
+      lastHeartbeatAt: '',
+      heartbeatAgeMs: null,
+      pendingCommands: 0,
     });
 
     this.server = new WebSocketServer({
@@ -182,6 +254,7 @@ export class AndroidWechatClient {
       this.server.once('listening', resolve);
       this.server.once('error', reject);
     });
+    this.state.patch('android', { serverStatus: 'LISTENING' });
     this.watchdog = setInterval(() => this.checkHeartbeat(), 15_000);
     this.watchdog.unref();
     console.log(`[Android] Agent WebSocket listening on ${this.host}:${this.port}${this.path}`);
@@ -260,6 +333,9 @@ export class AndroidWechatClient {
       case 'private_text':
         await this.handlePrivateText(socket, message);
         break;
+      case 'group_text':
+        await this.handleGroupText(socket, message);
+        break;
       case 'command_result':
         this.handleCommandResult(message);
         break;
@@ -327,6 +403,21 @@ export class AndroidWechatClient {
       lastSyncAt: new Date(socket.feagle.lastSeenAt).toISOString(),
       syncAgeMs: 0,
     });
+    this.state.patch('android', {
+      serverStatus: 'LISTENING',
+      deviceStatus: 'CONNECTED',
+      hookConnected: socket.feagle.hookConnected,
+      deviceIdMasked: this.maskDeviceId(socket.feagle.deviceId),
+      lastHeartbeatAt: new Date(socket.feagle.lastSeenAt).toISOString(),
+      heartbeatAgeMs: 0,
+      pendingCommands: this.pendingCommands.size,
+    });
+  }
+
+  maskDeviceId(deviceId) {
+    const normalized = String(deviceId || '');
+    if (normalized.length <= 4) return normalized ? '****' : '';
+    return `${normalized.slice(0, 2)}***${normalized.slice(-2)}`;
   }
 
   handlePairRequest(socket, message) {
@@ -467,6 +558,163 @@ export class AndroidWechatClient {
     }
   }
 
+  async handleGroupText(socket, message) {
+    const eventId = String(message.eventId || '').trim();
+    const talker = String(message.talker || '').trim();
+    const sender = String(message.sender || '').trim();
+    const groupName = displayName(message.groupName || 'Android group');
+    const nickname = displayName(message.displayName || 'Group member');
+    const content = typeof message.content === 'string' ? message.content.trim() : '';
+    if (
+      !validIdentifier(eventId)
+      || !validGroupTalker(talker)
+      || !validGroupSender(sender)
+      || content.length === 0
+      || Array.from(content).length > 2_000
+    ) {
+      socket.close(1008, 'Invalid group event');
+      return;
+    }
+
+    const receiptId = `android:${socket.feagle.deviceId}:${eventId}`;
+    const receipt = this.idMap.messageReceipt(receiptId);
+    if (TERMINAL_RECEIPT_STATUSES.has(receipt?.status)) {
+      this.ack(socket, eventId);
+      return;
+    }
+    if (this.processingEvents.has(receiptId)) {
+      this.nack(socket, eventId, 2_000, 'event_in_progress');
+      return;
+    }
+
+    if (!receipt) this.idMap.claimMessage(receiptId, 'android-group');
+    this.processingEvents.add(receiptId);
+    this.state.increment('received');
+    const groupId = this.idMap.entity('group', talker, talker, groupName);
+    const userId = this.idMap.entity('group_member', sender, sender, nickname);
+    const peer = `${groupName} / ${nickname}`;
+    this.state.upsertGroup({ groupId, name: groupName, memberCount: 0 });
+
+    let guard;
+    try {
+      if (this.groupChatMode === GROUP_CHAT_MODES.OFF) {
+        this.idMap.updateMessageReceipt(receiptId, 'DROPPED');
+        this.state.increment('dropped');
+        this.state.incrementGroup('blocked');
+        this.state.addMessage({ direction: 'IN', peer, text: content, status: 'GROUP-OFF' });
+        this.ack(socket, eventId);
+        return;
+      }
+
+      this.state.incrementGroup('observed');
+      if (this.groupChatMode === GROUP_CHAT_MODES.OBSERVE) {
+        this.idMap.updateMessageReceipt(receiptId, 'DROPPED');
+        this.state.addMessage({
+          direction: 'IN',
+          peer,
+          text: content,
+          status: 'GROUP-OBSERVED',
+        });
+        this.ack(socket, eventId);
+        return;
+      }
+
+      const allowed = this.groupAllowlist.has(String(groupId));
+      if (!allowed || message.mentioned !== true) {
+        this.idMap.updateMessageReceipt(receiptId, 'DROPPED');
+        this.state.increment('dropped');
+        this.state.incrementGroup('blocked');
+        this.state.addMessage({
+          direction: 'IN',
+          peer,
+          text: content,
+          status: allowed ? 'GROUP-NOT-MENTIONED' : 'GROUP-NOT-ALLOWED',
+        });
+        this.ack(socket, eventId);
+        return;
+      }
+
+      if (this.adminMode !== WECHAT_ADMIN_MODES.RUNNING || this.isSleeping()) {
+        this.idMap.updateMessageReceipt(receiptId, 'DROPPED');
+        this.state.increment('dropped');
+        this.state.incrementGroup('blocked');
+        this.state.addMessage({
+          direction: 'IN',
+          peer,
+          text: content,
+          status: this.isSleeping() ? 'SLEEP-DROP' : 'ADMIN-PAUSED',
+        });
+        this.ack(socket, eventId);
+        return;
+      }
+
+      const safety = this.groupSafety?.checkInbound({ groupId, userId, text: content });
+      if (safety && !safety.allowed) {
+        this.idMap.updateMessageReceipt(receiptId, 'BLOCKED');
+        this.state.increment('blocked');
+        this.state.incrementGroup('blocked');
+        if (safety.status === 'GROUP-POLICY-BLOCKED') {
+          this.state.incrementGroup('policyBlocked');
+        } else if (safety.status.includes('RATE-LIMITED')) {
+          this.state.incrementGroup('rateLimited');
+        }
+        this.state.addMessage({ direction: 'IN', peer, text: content, status: safety.status });
+        this.ack(socket, eventId);
+        return;
+      }
+
+      guard = this.messageGuard?.check({
+        userId: `group:${groupId}:user:${userId}`,
+        text: content,
+        wechatMessageId: receiptId,
+      });
+      if (guard && !guard.allowed) {
+        this.idMap.updateMessageReceipt(receiptId, 'BLOCKED');
+        this.state.increment('blocked');
+        this.state.incrementGroup('blocked');
+        this.state.addMessage({ direction: 'IN', peer, text: content, status: guard.status });
+        this.ack(socket, eventId);
+        return;
+      }
+
+      this.state.addMessage({ direction: 'IN', peer, text: content, status: 'GROUP-MENTION' });
+      await this.onGroupText({
+        groupId,
+        groupName,
+        userId,
+        nickname,
+        text: content,
+        rawText: content,
+        mentioned: true,
+        wechatMessageId: receiptId,
+        createTime: normalizeTimestamp(message.createTime),
+      });
+      this.idMap.updateMessageReceipt(receiptId, 'FORWARDED');
+      this.state.incrementGroup('forwarded');
+      this.ack(socket, eventId);
+    } catch (error) {
+      this.messageGuard?.rollback(guard);
+      this.groupSafety?.recordFailure(groupId);
+      this.idMap.releaseMessageReceipt(receiptId);
+      this.state.incrementGroup('blocked');
+      this.state.addError('android-group-forward', error);
+      this.state.addMessage({
+        direction: 'IN',
+        peer,
+        text: content,
+        status: error?.code === 'UPSTREAM_BUSY' ? 'UPSTREAM-BUSY' : 'FORWARD-FAILED',
+      });
+      this.nack(
+        socket,
+        eventId,
+        error?.code === 'UPSTREAM_BUSY' ? 5_000 : 3_000,
+        error?.code || 'forward_failed',
+      );
+    } finally {
+      this.processingEvents.delete(receiptId);
+    }
+  }
+
   ack(socket, eventId) {
     this.send(socket, { type: 'event_ack', eventId });
   }
@@ -495,18 +743,33 @@ export class AndroidWechatClient {
       throw new Error('首期仅支持 1-2000 字的私聊文本消息');
     }
 
+    const commandId = await this.sendAgentText('private', talker, content);
+    this.state.increment('replied');
+    this.state.addMessage({
+      direction: 'OUT',
+      peer: this.idMap.contact(onebotUserId)?.nickname || onebotUserId,
+      text: content,
+      status: 'SENT',
+    });
+    return { MsgID: commandId };
+  }
+
+  async sendAgentText(chatType, talker, content) {
     const commandId = randomUUID();
     const response = new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingCommands.delete(commandId);
+        this.state.patch('android', { pendingCommands: this.pendingCommands.size });
         reject(new Error('Android send_text command timed out'));
       }, this.commandTimeoutMs);
       timer.unref();
       this.pendingCommands.set(commandId, { resolve, reject, timer });
+      this.state.patch('android', { pendingCommands: this.pendingCommands.size });
     });
     const sent = this.send(this.socket, {
       type: 'send_text',
       commandId,
+      chatType,
       talker,
       content,
     });
@@ -514,15 +777,105 @@ export class AndroidWechatClient {
       const pending = this.pendingCommands.get(commandId);
       clearTimeout(pending?.timer);
       this.pendingCommands.delete(commandId);
+      this.state.patch('android', { pendingCommands: this.pendingCommands.size });
       throw new Error('Android Agent disconnected before send_text was sent');
     }
     await response;
-    this.state.increment('replied');
-    return { MsgID: commandId };
+    return commandId;
   }
 
-  sendGroupText() {
-    throw new Error('Android transport 首期不支持群聊发送');
+  async sendGroupText(onebotGroupId, text) {
+    const groupId = String(onebotGroupId);
+    const previous = this.groupSendQueues.get(groupId) || Promise.resolve();
+    const pending = previous
+      .catch(() => {})
+      .then(() => this.sendGroupTextQueued(groupId, text));
+    this.groupSendQueues.set(groupId, pending);
+    return pending.finally(() => {
+      if (this.groupSendQueues.get(groupId) === pending) {
+        this.groupSendQueues.delete(groupId);
+      }
+    });
+  }
+
+  async sendGroupTextQueued(groupId, text) {
+    if (!this.loggedIn || this.socket?.readyState !== WebSocket.OPEN) {
+      throw new Error('Android WeChat Agent is not connected');
+    }
+    if (this.adminMode !== WECHAT_ADMIN_MODES.RUNNING) {
+      throw new Error('管理员已暂停机器人回复');
+    }
+    if (this.isSleeping()) throw new Error('机器人处于定时休眠时段');
+    if (this.groupChatMode !== GROUP_CHAT_MODES.MENTION_ONLY) {
+      throw new Error('群聊回复模式未启用');
+    }
+    if (!this.groupAllowlist.has(groupId)) throw new Error('该群不在回复白名单中');
+
+    const content = String(text || '');
+    if (!content || Array.from(content).length > this.groupReplyMaxChars) {
+      const error = new Error(`群聊回复必须为 1-${this.groupReplyMaxChars} 字的文本`);
+      error.code = 'GROUP_REPLY_TOO_LONG';
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      throw error;
+    }
+    const safety = this.groupSafety?.checkOutbound({ groupId, text: content });
+    if (safety && !safety.allowed) {
+      const error = new Error('群聊回复被安全策略或熔断器拦截');
+      error.code = safety.status;
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      if (safety.status === 'GROUP-POLICY-BLOCKED') {
+        this.state.incrementGroup('policyBlocked');
+      }
+      throw error;
+    }
+    const lastReplyAt = this.lastGroupReplyAt.get(groupId) || 0;
+    if (lastReplyAt && this.now() - lastReplyAt < this.groupReplyCooldownMs) {
+      const error = new Error('群聊回复冷却中，请稍后再试');
+      error.code = 'GROUP_REPLY_COOLDOWN';
+      this.state.increment('blocked');
+      this.state.incrementGroup('blocked');
+      this.state.incrementGroup('rateLimited');
+      this.groupSafety?.recordAnomaly(groupId);
+      throw error;
+    }
+    const jitterMs = this.groupJitterMinMs + Math.floor(
+      this.random() * (this.groupJitterMaxMs - this.groupJitterMinMs + 1),
+    );
+    this.state.patch('groupChat', { lastJitterMs: jitterMs });
+    if (jitterMs > 0) await this.delay(jitterMs);
+    if (!this.loggedIn || this.adminMode !== WECHAT_ADMIN_MODES.RUNNING || this.isSleeping()) {
+      throw new Error('回复等待期间机器人状态已变化');
+    }
+    const safetyAfterDelay = this.groupSafety?.checkOutbound({ groupId, text: content });
+    if (safetyAfterDelay && !safetyAfterDelay.allowed) {
+      const error = new Error('回复等待期间群聊安全状态已变化');
+      error.code = safetyAfterDelay.status;
+      throw error;
+    }
+    const talker = this.idMap.protocolId(groupId, 'group');
+    if (!talker || !validGroupTalker(talker)) {
+      throw new Error(`未找到 OneBot 群映射: ${groupId}`);
+    }
+    let commandId;
+    try {
+      commandId = await this.sendAgentText('group', talker, content);
+    } catch (error) {
+      this.groupSafety?.recordFailure(groupId);
+      throw error;
+    }
+    this.lastGroupReplyAt.set(groupId, this.now());
+    this.groupSafety?.recordSuccess(groupId);
+    this.state.increment('replied');
+    this.state.incrementGroup('replied');
+    this.state.addMessage({
+      direction: 'OUT',
+      peer: this.idMap.contact(groupId)?.nickname || groupId,
+      text: content,
+      status: 'GROUP-SENT',
+    });
+    return { MsgID: commandId };
   }
 
   handleCommandResult(message) {
@@ -530,6 +883,7 @@ export class AndroidWechatClient {
     if (!pending) return;
     clearTimeout(pending.timer);
     this.pendingCommands.delete(String(message.commandId));
+    this.state.patch('android', { pendingCommands: this.pendingCommands.size });
     if (message.ok === true) pending.resolve();
     else pending.reject(new Error(String(message.error || 'send_text_failed')));
   }
@@ -551,6 +905,14 @@ export class AndroidWechatClient {
       lastDisconnectAt: new Date().toISOString(),
       lastDisconnectReason: 'Android Agent disconnected',
     });
+    this.state.patch('android', {
+      deviceStatus: this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
+        ? 'MANUAL_OFFLINE'
+        : 'DISCONNECTED',
+      hookConnected: false,
+      heartbeatAgeMs: null,
+      pendingCommands: 0,
+    });
   }
 
   checkHeartbeat() {
@@ -558,6 +920,7 @@ export class AndroidWechatClient {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     const age = Date.now() - socket.feagle.lastSeenAt;
     this.state.patch('wechat', { syncAgeMs: age });
+    this.state.patch('android', { heartbeatAgeMs: age });
     if (age > this.heartbeatTimeoutMs) {
       socket.close(4000, 'Heartbeat timeout');
     }
@@ -578,7 +941,19 @@ export class AndroidWechatClient {
     return this.state.snapshot();
   }
 
-  setGroupChatConfig() {
+  setGroupChatConfig(mode, allowlist, blockedTerms = []) {
+    const normalizedMode = normalizeGroupChatMode(mode);
+    if (normalizedMode !== mode) {
+      throw new TypeError(`Unsupported group chat mode: ${mode}`);
+    }
+    this.groupChatMode = normalizedMode;
+    this.groupAllowlist = new Set(normalizeGroupAllowlist(allowlist));
+    const normalizedTerms = this.groupSafety?.setBlockedTerms(blockedTerms) || [];
+    this.state.patch('groupChat', {
+      mode: this.groupChatMode,
+      allowlist: [...this.groupAllowlist],
+      blockedTerms: normalizedTerms,
+    });
     return this.state.snapshot();
   }
 
@@ -600,6 +975,7 @@ export class AndroidWechatClient {
       pending.reject(new Error(reason));
     }
     this.pendingCommands.clear();
+    this.state.patch('android', { pendingCommands: 0 });
   }
 
   shutdown() {
@@ -612,6 +988,13 @@ export class AndroidWechatClient {
     this.loggedIn = false;
     this.server?.close();
     this.server = null;
+    this.state.patch('android', {
+      serverStatus: 'STOPPED',
+      deviceStatus: 'DISCONNECTED',
+      hookConnected: false,
+      heartbeatAgeMs: null,
+      pendingCommands: 0,
+    });
     this.pairingAttempts.clear();
     if (this.ownsPairingStore) this.pairingStore?.close();
     this.pairingStore = null;

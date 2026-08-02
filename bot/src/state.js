@@ -29,6 +29,23 @@ export class RuntimeState extends EventEmitter {
       reloginTestCompletedAt: '',
       reloginTestDetail: '',
     };
+    this.transport = {
+      active: 'wechat4u',
+      requested: 'wechat4u',
+      switching: false,
+      restartRequired: false,
+      detail: 'Web protocol transport',
+    };
+    this.android = {
+      serverStatus: 'DISABLED',
+      endpoint: '',
+      deviceStatus: 'DISCONNECTED',
+      hookConnected: false,
+      deviceIdMasked: '',
+      lastHeartbeatAt: '',
+      heartbeatAgeMs: null,
+      pendingCommands: 0,
+    };
     this.astrbot = {
       status: 'STARTING',
       pid: null,
@@ -168,6 +185,8 @@ export class RuntimeState extends EventEmitter {
       startedAt: this.startedAt,
       now: new Date().toISOString(),
       wechat: this.wechat,
+      transport: this.transport,
+      android: this.android,
       astrbot: this.astrbot,
       onebot: this.onebot,
       groupChat: this.groupChat,
