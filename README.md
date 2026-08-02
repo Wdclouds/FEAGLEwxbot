@@ -1,5 +1,7 @@
 # FEAGLEwxbot
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 一个面向个人自托管场景的微信机器人 Monorepo。它把微信消息转换成 OneBot v11 事件交给
 AstrBot，并把回复沿原通道送回微信。
 
@@ -140,4 +142,9 @@ WeChat baseline   8.0.70
 ./scripts/check-secrets.sh
 ```
 
-仓库目前尚未选择开源许可证。在许可证确定前，请勿假定已经获得再分发或商业使用授权。
+## 许可证
+
+FEAGLEwxbot 自有源代码采用 [MIT License](./LICENSE) 开源。
+
+仓库引用的软件、npm 依赖、Android SDK、AstrBot、Wechat4u、微信客户端及其他第三方
+组件仍分别适用其原有许可证或服务条款；MIT License 不会替代这些第三方条款。

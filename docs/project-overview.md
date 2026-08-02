@@ -253,4 +253,7 @@ AstrBot 仍可能把它识别为一段新会话。
 - Android `8.0.70` 适配研究参考
   [moluhualuo/wechat-Monitor-hook](https://github.com/moluhualuo/wechat-Monitor-hook)
 
-仓库目前尚未选择开源许可证。在许可证确定前，请不要假定拥有再分发或商业使用授权。
+FEAGLEwxbot 自有源代码采用 [MIT License](../LICENSE) 开源。上述项目、npm 依赖、
+Android SDK、微信客户端及其他第三方组件仍分别适用其原有许可证或服务条款；本项目的
+MIT License 不会替代第三方条款。`wechat-Monitor-hook` 当前未声明许可证，本仓库不复制
+或打包其源文件。
