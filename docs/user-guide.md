@@ -331,19 +331,39 @@ BOT_QUIET_HOURS=00:00-07:00
 
 ### 群聊模式
 
-群聊功能只适用于当前 Wechat4u 接入：
+Wechat4u 与 Android Agent 共用同一套群聊安全闸门：
 
 - `OFF`：完全不处理群消息。
 - `OBSERVE`：只显示概览，不进入 AstrBot。
 - `MENTION_ONLY`：只有白名单群中明确 `@` 机器人时才回复。
 
 第一次放入群聊时先使用 `OBSERVE`，确认群 ID，再添加白名单并切换
-`MENTION_ONLY`。不要在白名单未核对前开启回复。
+`MENTION_ONLY`。Android 模式还要求 Hook 能确认这条消息明确 `@` 了机器人；无法
+确认时会保持静默。不要在白名单未核对前开启回复。
+
+### 设置页与通道切换
+
+Dashboard 顶部进入“设置 / Settings”，可以修改：
+
+- Wechat4u / Android 通道。
+- 休眠时段与时区。
+- 私聊长度、速率和 AstrBot 并发限制。
+- 群聊冷却、回复长度、随机延迟和成员/群级速率限制。
+
+保存普通设置或切换通道都会让 Bridge 进程自动重启。容器由 Docker 自动拉起，
+`data/` 中的 AstrBot 数据、Wechat4u Session、ID 映射、控制状态和 Android 配对均保留。
+模型 Key、飞书 Secret 和 Android Token 不在设置页中，应继续通过 AstrBot WebUI、
+安装向导或服务器环境变量管理。
+如果 Android 配对密钥尚未由 `./wxbot-bridge setup` 生成，Dashboard 会拒绝切换到
+Android，避免重启后进入不可用状态。
+
+切换后机器人 OneBot 身份保持不变，但 Web 临时联系人 ID 不能可靠等同于 Android
+`wxid`。项目不会按昵称自动合并，因此跨通道首次聊天可能创建新的 AstrBot 会话。
 
 ## 11. 切换到 Android Agent
 
 Android Agent 是高级可选接入。当前验证基线为 Android 14、Magisk/Zygisk、
-LSPosed/Vector 和微信 `8.0.70`，首期只验证私聊文本。
+LSPosed/Vector 和微信 `8.0.70`。Agent 0.6.0 增加受控群聊文本收发；通知兜底仍只处理私聊。
 
 服务器 `.env`：
 
@@ -373,7 +393,8 @@ openssl rand -hex 32
 - ECS 与 Android 同一 Tailnet 中的 Tailscale 私网地址。
 
 不要把普通公网明文 `ws://` 直接暴露。完整的 APK 构建、设备配置、WSS、Tailscale、
-ACK 和版本限制见 [Android Agent 构建与接入](../android/README.md)。
+ACK 和版本限制见
+[FEAGLEwxbot Android Kit](https://github.com/Wdclouds/FEAGLEwxbot-android-kit)。
 
 切换后重新创建容器：
 

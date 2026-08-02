@@ -37,6 +37,7 @@ export class OneBotClient {
     state,
     idMap,
     wechat,
+    selfId = wechat.selfId,
     isSleeping,
     maxInFlight = positiveInteger(process.env.BOT_MAX_INFLIGHT, 3),
     maxInFlightPerUser = positiveInteger(process.env.BOT_MAX_INFLIGHT_PER_USER, 1),
@@ -46,6 +47,7 @@ export class OneBotClient {
     this.state = state;
     this.idMap = idMap;
     this.wechat = wechat;
+    this.selfId = selfId;
     this.isSleeping = isSleeping;
     this.ws = null;
     this.stopping = false;
@@ -66,7 +68,7 @@ export class OneBotClient {
   }
 
   connect() {
-    if (this.stopping || !this.wechat.selfId) {
+    if (this.stopping || !this.selfId) {
       this.reconnectTimer = setTimeout(() => this.connect(), RECONNECT_INTERVAL_MS);
       this.reconnectTimer.unref();
       return;
@@ -81,7 +83,7 @@ export class OneBotClient {
       process.env.ONEBOT_WS_URL || 'ws://127.0.0.1:6199/ws',
       {
         headers: {
-          'X-Self-ID': String(this.wechat.selfId),
+          'X-Self-ID': String(this.selfId),
           'X-Client-Role': 'Universal',
         },
       },
@@ -95,7 +97,7 @@ export class OneBotClient {
       this.resolveConnectionWaiters();
       this.sendEvent({
         time: Math.floor(Date.now() / 1000),
-        self_id: this.wechat.selfId,
+        self_id: this.selfId,
         post_type: 'meta_event',
         meta_event_type: 'lifecycle',
         sub_type: 'connect',
@@ -132,11 +134,11 @@ export class OneBotClient {
   startHeartbeat() {
     this.stopHeartbeat();
     const heartbeat = () => {
-      if (this.ws?.readyState !== WebSocket.OPEN || !this.wechat.selfId) return;
+      if (this.ws?.readyState !== WebSocket.OPEN || !this.selfId) return;
       const now = new Date().toISOString();
       this.sendEvent({
         time: Math.floor(Date.now() / 1000),
-        self_id: this.wechat.selfId,
+        self_id: this.selfId,
         post_type: 'meta_event',
         meta_event_type: 'heartbeat',
         status: {
@@ -172,7 +174,7 @@ export class OneBotClient {
     const pendingId = this.reserveRequest(userId);
     const event = {
       time: Math.floor(Date.now() / 1000),
-      self_id: this.wechat.selfId,
+      self_id: this.selfId,
       post_type: 'message',
       message_type: 'private',
       sub_type: 'friend',
@@ -217,7 +219,7 @@ export class OneBotClient {
     const pendingId = this.reserveRequest(pendingKey);
     const event = {
       time: Math.floor(Date.now() / 1000),
-      self_id: this.wechat.selfId,
+      self_id: this.selfId,
       post_type: 'message',
       message_type: 'group',
       sub_type: 'normal',
@@ -225,10 +227,10 @@ export class OneBotClient {
       group_id: Number(groupId),
       user_id: Number(userId),
       message: [
-        { type: 'at', data: { qq: String(this.wechat.selfId) } },
+        { type: 'at', data: { qq: String(this.selfId) } },
         { type: 'text', data: { text } },
       ],
-      raw_message: `[CQ:at,qq=${this.wechat.selfId}] ${text}`,
+      raw_message: `[CQ:at,qq=${this.selfId}] ${text}`,
       font: 0,
       sender: {
         user_id: Number(userId),
@@ -429,7 +431,7 @@ export class OneBotClient {
         }
         case 'get_login_info':
           response = ok({
-            user_id: this.wechat.selfId,
+            user_id: this.selfId,
             nickname: this.state.wechat.account || 'WeChat',
           }, echo);
           break;

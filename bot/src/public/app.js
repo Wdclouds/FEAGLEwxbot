@@ -13,6 +13,11 @@ const statusLabels = {
   STARTING: '启动中 / STARTING',
   RESTORING: '恢复中 / RESTORING',
   WAITING_SCAN: '等待扫码 / WAITING SCAN',
+  WAITING_AGENT: '等待 Agent / WAITING AGENT',
+  WAITING_HOOK: '等待 Hook / WAITING HOOK',
+  WAITING: '等待连接 / WAITING',
+  LISTENING: '正在监听 / LISTENING',
+  STOPPED: '已停止 / STOPPED',
   SCANNED: '已扫码 / SCANNED',
   ONLINE: '在线 / ONLINE',
   CONNECTED: '已连接 / CONNECTED',
@@ -223,6 +228,23 @@ function renderGroupChat(state) {
 function render(state) {
   renderAdminMode(state);
   renderGroupChat(state);
+  const transport = state.transport || { active: 'wechat4u', detail: '' };
+  const android = state.android || {};
+  const androidActive = transport.active === 'android';
+  $('transport-name').textContent = androidActive ? 'Android Hook' : 'Wechat4u Web';
+  $('transport-detail').textContent = transport.detail || '';
+  $('android-diagnostics').hidden = !androidActive;
+  if (androidActive) {
+    $('android-server').textContent = `${bilingualStatus(android.serverStatus)} · ${android.endpoint || '--'}`;
+    $('android-device').textContent = `${bilingualStatus(android.deviceStatus)} · ${android.deviceIdMasked || '--'}`;
+    $('android-hook').textContent = android.hookConnected
+      ? '已连接 / CONNECTED'
+      : '未连接 / DISCONNECTED';
+    $('android-heartbeat').textContent = android.lastHeartbeatAt
+      ? `${time(android.lastHeartbeatAt)} · ${Math.round((android.heartbeatAgeMs || 0) / 1000)}s`
+      : '--';
+    $('android-pending').textContent = android.pendingCommands || 0;
+  }
   $('account').textContent = state.wechat.account || '--';
   $('session-status').textContent = bilingualStatus(state.wechat.status);
   $('protocol-health').textContent = bilingualStatus(state.wechat.protocolHealth || 'UNKNOWN');
@@ -277,11 +299,15 @@ function render(state) {
   const reloginButton = $('force-relogin-test');
   const reloginHint = $('force-relogin-hint');
   const reloginRunning = reloginStatus === 'RUNNING';
-  reloginButton.disabled = reloginRunning || state.wechat.adminMode !== 'RUNNING';
+  reloginButton.disabled = androidActive
+    || reloginRunning
+    || state.wechat.adminMode !== 'RUNNING';
   reloginButton.textContent = reloginRunning
     ? '等待重新登录 / Waiting...'
     : '强制重登测试 / Relogin test';
-  if (reloginRunning) {
+  if (androidActive) {
+    reloginHint.textContent = 'Android Hook 不使用 Web 扫码重登测试 / Not used by Android transport';
+  } else if (reloginRunning) {
     reloginHint.textContent =
       state.wechat.reloginTestDetail || '二维码将发送到飞书私聊 / QR will be sent once';
   } else if (reloginStatus === 'SUCCESS') {
@@ -360,7 +386,10 @@ function setTheme(theme) {
 async function setAdminMode(mode) {
   const response = await fetch('/api/wechat/admin-mode', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-FEAGLE-Dashboard': '1',
+    },
     body: JSON.stringify({
       mode,
       confirm: mode === 'MANUAL_OFFLINE' ? 'MANUAL_OFFLINE' : undefined,
@@ -435,7 +464,10 @@ $('group-config-save').addEventListener('click', async () => {
   try {
     const response = await fetch('/api/group-chat/config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-FEAGLE-Dashboard': '1',
+      },
       body: JSON.stringify({
         mode,
         allowlist,
@@ -465,7 +497,10 @@ $('test-mode-toggle').addEventListener('click', async () => {
   try {
     const response = await fetch('/api/test-mode', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-FEAGLE-Dashboard': '1',
+      },
       body: JSON.stringify({ enabled: !enabled }),
     });
     const payload = await response.json();
@@ -484,7 +519,10 @@ $('notification-test').addEventListener('click', async () => {
   button.disabled = true;
   hint.textContent = '正在发送 / Sending...';
   try {
-    const response = await fetch('/api/notifications/test', { method: 'POST' });
+    const response = await fetch('/api/notifications/test', {
+      method: 'POST',
+      headers: { 'X-FEAGLE-Dashboard': '1' },
+    });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || '发送失败 / Send failed');
     render(payload);
@@ -509,7 +547,10 @@ $('force-relogin-test').addEventListener('click', async () => {
   try {
     const response = await fetch('/api/wechat/force-relogin', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-FEAGLE-Dashboard': '1',
+      },
       body: JSON.stringify({ confirm: 'FORCE_LOGOUT' }),
     });
     const payload = await response.json();

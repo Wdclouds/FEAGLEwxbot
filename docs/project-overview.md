@@ -54,7 +54,7 @@ Dashboard ── 状态与控制 ──▶ FEAGLE Bridge
 | --- | --- | --- |
 | 运行位置 | 机器人 Docker 容器 | Android 设备 + 云端 Bridge |
 | 登录方式 | Dashboard 二维码扫码 | Android 微信正常登录 |
-| 当前验证范围 | 私聊文本；受控群聊文本 | 私聊文本收发 |
+| 当前验证范围 | 私聊文本；受控群聊文本 | 私聊文本；受控群聊文本 |
 | 连接方式 | 微信 Web 协议 | Hook → Binder → Agent → WSS/Tailscale |
 | 版本要求 | 受微信 Web 登录策略影响 | 微信固定为 `8.0.70` |
 | 优点 | 部署步骤少，二维码集中管理 | 不依赖 Web 微信登录能力 |
@@ -104,7 +104,12 @@ Node.js 服务，是项目的控制中心，负责：
 - 查看二维码和有限的消息概览。
 - 切换正常、暂停或紧急离线状态。
 - 管理休眠测试、群聊闸门和本地文字策略。
+- 查看 Android WSS、设备、Hook、心跳与待确认命令状态。
+- 在安全白名单内修改通道、休眠、限流、并发与群聊缓冲参数。
 - 手动测试登录与通知链路。
+
+Dashboard 不读取或返回模型 API Key、飞书 Secret、Android Token 和原始 `.env`。
+所有网页写操作要求同源请求和专用请求头；Docker 仍默认把面板绑定到宿主机回环地址。
 
 ### Android Agent
 
@@ -156,7 +161,7 @@ Android 模式还会使用 `event_ack`：
 
 ### 群聊闸门
 
-Wechat4u 模式提供三种群聊状态：
+Wechat4u 与 Android 模式共用三种群聊状态：
 
 - `OFF`：不进入 AstrBot，不调用模型。
 - `OBSERVE`：只显示本地概览，不进入 AstrBot，不回复。
@@ -181,6 +186,7 @@ Wechat4u 模式提供三种群聊状态：
 | --- | --- |
 | 模型与飞书密钥、端口和开关 | `.env` |
 | 微信 Session、ID 映射、控制状态和 AstrBot 数据 | `data/` |
+| Dashboard 安全设置 | `data/bridge-settings.json` |
 | Android 设备 Token | 服务器 `.env` 与 Android 应用私有存储 |
 | Windows SSH 隧道配置 | `%LOCALAPPDATA%\\FEAGLEwxbot\\` |
 
@@ -188,6 +194,11 @@ Dashboard 和 AstrBot WebUI 默认只监听宿主机回环地址。Android 远�
 WSS，或仅绑定 Tailscale 私网地址；不要把明文 WebSocket 直接暴露到公网。
 
 更完整的提交与漏洞报告规则见 [安全策略](../SECURITY.md)。
+
+切换通道不会清除上述数据，并使用固定的 OneBot `self_id` 保持机器人平台身份。
+但 Wechat4u 的联系人/群临时标识与 Android 的 `wxid`/`@chatroom` 标识并不等价；
+项目不会按昵称自动合并，以免同名联系人串话。因此同一联系人跨通道首次出现时，
+AstrBot 仍可能把它识别为一段新会话。
 
 ## 8. 当前能力与限制
 
@@ -201,11 +212,13 @@ WSS，或仅绑定 Tailscale 私网地址；不要把明文 WebSocket 直接暴�
 - 消息去重、限流和熔断。
 - 飞书私聊通知。
 - Android `8.0.70` 私聊文本接入。
+- Android `8.0.70` 群聊文本接收与回复命令。
+- Dashboard Android 状态诊断、通道切换和安全设置页。
 
 当前限制：
 
-- Android 接入首期不支持群聊。
 - 群聊不支持图片、文件和引用消息。
+- Android 群聊只有在 Hook 提供明确 `@` 标记时才会进入 AstrBot；无法确认时按未提及丢弃。
 - Wechat4u 群成员资料可能不完整。
 - 微信 Web 协议或 Android 客户端更新都可能导致接入失效。
 - 个别 OpenAI-compatible 提供商仍可能需要在 AstrBot WebUI 手动调整字段。

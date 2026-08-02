@@ -1,5 +1,9 @@
 # FEAGLEwxbot Android Agent
 
+> Windows 一键构建、安装、设备检查和当前 0.6.0 源码以独立仓库
+> [FEAGLEwxbot-android-kit](https://github.com/Wdclouds/FEAGLEwxbot-android-kit)
+> 为准。本目录保留 Bridge 侧架构参考，不作为新用户安装入口。
+
 Android Agent 是 FEAGLEwxbot Bridge 的可选微信接入方式。它和 Wechat4u
 并列存在，不会同时消费同一个微信账号的消息。
 
@@ -19,8 +23,9 @@ AstrBot 回复
   → 微信
 ```
 
-当前已验证范围只有入站私聊文本和私聊文本回复。群聊、图片、文件、历史消息读取均
-不在首期范围内。Hook 入口通过微信版本硬门禁固定为 `8.0.70`；其他微信版本不会
+Agent 0.6.0 支持入站/出站私聊文本和受控群聊文本。群聊必须经过 Bridge 的模式、
+白名单、明确 `@`、限流与熔断检查；Hook 无法确认 `@` 时保持静默。图片、文件、历史消息读取均
+不在当前范围内。Hook 入口通过微信版本硬门禁固定为 `8.0.70`；其他微信版本不会
 尝试加载该适配器。`NotificationListenerService` 仍保留为受限兜底和通知回复
 通道，但不是已验证主链路。
 
@@ -179,6 +184,8 @@ WECHAT_TRANSPORT=android
 ```
 
 当前设计一次只启用一个 transport，避免一条消息从两个入口重复进入 AstrBot。
+也可以在 Dashboard 的“设置 / Settings”页切换；该操作只重启 Bridge，不清除
+Wechat4u Session、Android 配对、ID 映射或 AstrBot 数据。
 
 ## 参考
 

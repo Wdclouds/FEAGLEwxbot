@@ -69,6 +69,15 @@ EOF
 
 android_case="$temporary_root/android-case"
 make_case "$android_case"
+mkdir -p "$android_case/data"
+cat >"$android_case/data/bridge-settings.json" <<'EOF'
+{
+  "transport": "wechat4u",
+  "quietHours": "00:00-07:00",
+  "timezone": "UTC",
+  "maxMessageChars": 2000
+}
+EOF
 printf '3\n2\n\n16291\n\n\n16290\n16285\nn\nn\n' \
   | PATH="$fake_bin:$PATH" "$android_case/scripts/setup.sh"
 
@@ -84,6 +93,10 @@ grep -qx 'ASTRBOT_GITHUB_PROXY=https://ghfast.top/' "$env_file"
 grep -Eq '^ASTRBOT_SOURCE_SHA256=[0-9a-f]{64}$' "$env_file"
 token="$(sed -n 's/^ANDROID_BRIDGE_TOKEN=//p' "$env_file")"
 [[ ${#token} -eq 64 ]]
+grep -Eq '"transport"[[:space:]]*:[[:space:]]*"android"' \
+  "$android_case/data/bridge-settings.json"
+grep -Eq '"timezone"[[:space:]]*:[[:space:]]*"Asia/Shanghai"' \
+  "$android_case/data/bridge-settings.json"
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ;;
   *) [[ "$(stat -c '%a' "$env_file")" == 600 ]] ;;

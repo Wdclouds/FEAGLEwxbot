@@ -11,7 +11,7 @@
 
 - `Wechat4u`：部署简单，支持扫码登录、私聊文本和受控群聊。
 - `Android Agent`：固定适配微信 `8.0.70`，通过 Android 设备、Hook 适配器和
-  独立 Agent 接入；当前已验证私聊文本收发。
+  独立 Agent 接入；支持私聊文本和受控群聊文本收发。
 
 同一账号一次只能选择一种接入方式，避免消息重复进入 AstrBot。
 
@@ -30,7 +30,7 @@
 
 专项资料：
 
-- [Android Agent 构建与接入](./android/README.md)
+- [Android Agent 构建与接入](https://github.com/Wdclouds/FEAGLEwxbot-android-kit)
 - [安全策略](./SECURITY.md)
 
 ## 快速开始
@@ -86,6 +86,10 @@ Dashboard 和 AstrBot WebUI 默认只绑定服务器回环地址，不直接暴�
 [操作步骤说明书：访问管理页面](./docs/user-guide.md#6-访问管理页面)。
 `start` 成功后也会直接打印可复制的隧道命令；该命令必须在浏览器所在的电脑运行。
 
+Dashboard 的“设置 / Settings”页可安全修改通道、休眠、限流、并发与群聊缓冲参数，
+保存后自动重启 Bridge。模型 Key、飞书 Secret 与 Android Token 不会通过 Dashboard
+API 暴露。
+
 ## 隐私提醒
 
 请勿把以下内容提交到 GitHub、公开 Issue 或聊天记录：
@@ -103,7 +107,7 @@ Dashboard 和 AstrBot WebUI 默认只绑定服务器回环地址，不直接暴�
 
 ## 当前范围
 
-当前重点是文本机器人链路、单机 Docker 部署、本地管理面板、会话自愈、消息限流、
+当前重点是两种通道的文本机器人链路、单机 Docker 部署、本地管理面板、会话自愈、消息限流、
 持久化去重和可选飞书通知。图片、文件、引用消息、更完整的群成员资料和一键升级
 流程仍在后续计划中。
 

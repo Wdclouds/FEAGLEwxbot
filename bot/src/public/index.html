@@ -22,6 +22,10 @@
         <p class="subtitle">连接、健康与消息流 / Connection, health & traffic</p>
       </div>
       <div class="header-tools">
+        <nav class="page-nav" aria-label="Dashboard navigation">
+          <a class="active" href="/">状态 / Status</a>
+          <a href="/settings.html">设置 / Settings</a>
+        </nav>
         <button class="icon-button" id="theme-toggle" type="button" aria-label="切换主题">
           <span id="theme-icon">☾</span>
           <span id="theme-label">夜间 / Dark</span>
@@ -32,6 +36,15 @@
         </div>
       </div>
     </header>
+
+    <section class="transport-strip" aria-label="消息通道状态">
+      <div>
+        <small>当前消息通道 / ACTIVE TRANSPORT</small>
+        <strong id="transport-name">Wechat4u Web</strong>
+      </div>
+      <p id="transport-detail">正在读取通道状态 / Loading transport state</p>
+      <a class="button blue compact-button" href="/settings.html#transport">切换通道 / Switch</a>
+    </section>
 
     <section class="status-grid">
       <article class="panel login-panel">
@@ -72,6 +85,19 @@
                 <strong id="recovery-attempts">0</strong>
                 <small id="sync-errors">错误 / ERRORS 0</small>
               </div>
+            </div>
+            <div class="android-diagnostics" id="android-diagnostics" hidden>
+              <div class="control-heading">
+                <strong>安卓链路诊断 / ANDROID DIAGNOSTICS</strong>
+                <small>Bridge → Agent → Hook</small>
+              </div>
+              <dl>
+                <div><dt>WSS 网关 / Gateway</dt><dd id="android-server">--</dd></div>
+                <div><dt>设备 / Device</dt><dd id="android-device">--</dd></div>
+                <div><dt>Hook 通道 / Hook</dt><dd id="android-hook">--</dd></div>
+                <div><dt>心跳 / Heartbeat</dt><dd id="android-heartbeat">--</dd></div>
+                <div><dt>待确认命令 / Pending</dt><dd id="android-pending">0</dd></div>
+              </dl>
             </div>
           </div>
         </div>

@@ -20,6 +20,9 @@ export class DashboardServer {
     forceWechatRelogin = async () => state.snapshot(),
     setWechatAdminMode = async () => state.snapshot(),
     setGroupChatConfig = async () => state.snapshot(),
+    getBridgeSettings = () => ({}),
+    saveBridgeSettings = async () => ({}),
+    switchTransport = async () => ({}),
     publicRoot = '/app/src/public',
   }) {
     this.state = state;
@@ -30,6 +33,9 @@ export class DashboardServer {
     this.forceWechatRelogin = forceWechatRelogin;
     this.setWechatAdminMode = setWechatAdminMode;
     this.setGroupChatConfig = setGroupChatConfig;
+    this.getBridgeSettings = getBridgeSettings;
+    this.saveBridgeSettings = saveBridgeSettings;
+    this.switchTransport = switchTransport;
     this.clients = new Set();
     this.publicRoot = publicRoot;
     this.server = createServer((request, response) => {
@@ -51,6 +57,86 @@ export class DashboardServer {
 
   handle(request, response) {
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+
+    if (url.pathname === '/api/settings') {
+      if (request.method === 'GET') {
+        response.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        response.end(JSON.stringify({
+          settings: this.getBridgeSettings(),
+          secretsManagedExternally: true,
+          restartOnSave: true,
+        }));
+        return;
+      }
+      if (request.method !== 'PUT') {
+        response.writeHead(405, {
+          Allow: 'GET, PUT',
+          'Content-Type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+      }
+      if (!this.authorizeMutation(request, response)) return;
+      this.readJson(request, response, 32_768, (payload) => {
+        Promise.resolve(this.saveBridgeSettings(payload))
+          .then((result) => {
+            response.writeHead(202, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify(result));
+          })
+          .catch((error) => {
+            response.writeHead(400, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify({ error: String(error?.message || error).slice(0, 200) }));
+          });
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/transport') {
+      if (request.method !== 'POST') {
+        response.writeHead(405, {
+          Allow: 'POST',
+          'Content-Type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+      }
+      if (!this.authorizeMutation(request, response)) return;
+      this.readJson(request, response, 2_048, (payload) => {
+        if (
+          !['wechat4u', 'android'].includes(payload.transport)
+          || payload.confirm !== 'SWITCH_TRANSPORT'
+        ) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Valid transport and explicit confirmation required' }));
+          return;
+        }
+        Promise.resolve(this.switchTransport(payload.transport))
+          .then((result) => {
+            response.writeHead(202, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify(result));
+          })
+          .catch((error) => {
+            response.writeHead(409, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify({ error: String(error?.message || error).slice(0, 200) }));
+          });
+      });
+      return;
+    }
     if (url.pathname === '/api/health/live') {
       response.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
@@ -96,6 +182,7 @@ export class DashboardServer {
         response.end(JSON.stringify({ error: 'Method not allowed' }));
         return;
       }
+      if (!this.authorizeMutation(request, response)) return;
       if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
         response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
@@ -137,6 +224,7 @@ export class DashboardServer {
         response.end(JSON.stringify({ error: 'Method not allowed' }));
         return;
       }
+      if (!this.authorizeMutation(request, response)) return;
       Promise.resolve(this.sendNotificationTest())
         .then((snapshot) => {
           response.writeHead(200, {
@@ -166,6 +254,7 @@ export class DashboardServer {
         response.end(JSON.stringify({ error: 'Method not allowed' }));
         return;
       }
+      if (!this.authorizeMutation(request, response)) return;
       if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
         response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
@@ -230,6 +319,7 @@ export class DashboardServer {
         response.end(JSON.stringify({ error: 'Method not allowed' }));
         return;
       }
+      if (!this.authorizeMutation(request, response)) return;
       if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
         response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
@@ -291,6 +381,7 @@ export class DashboardServer {
         response.end(JSON.stringify({ error: 'Method not allowed' }));
         return;
       }
+      if (!this.authorizeMutation(request, response)) return;
       if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
         response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
@@ -403,6 +494,61 @@ export class DashboardServer {
   push(snapshot) {
     const payload = `data: ${JSON.stringify(snapshot)}\n\n`;
     for (const client of this.clients) client.write(payload);
+  }
+
+  authorizeMutation(request, response) {
+    if (request.headers['x-feagle-dashboard'] !== '1') {
+      response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: 'Dashboard mutation header required' }));
+      return false;
+    }
+    const origin = String(request.headers.origin || '');
+    const host = String(request.headers.host || '');
+    if (origin) {
+      let originHost = '';
+      try {
+        originHost = new URL(origin).host;
+      } catch {
+        response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: 'Invalid Origin' }));
+        return false;
+      }
+      if (originHost !== host) {
+        response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: 'Cross-origin mutation denied' }));
+        return false;
+      }
+    }
+    return true;
+  }
+
+  readJson(request, response, maxBytes, callback) {
+    if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
+      response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+      return;
+    }
+    let body = '';
+    let tooLarge = false;
+    request.setEncoding('utf8');
+    request.on('data', (chunk) => {
+      if (tooLarge) return;
+      body += chunk;
+      if (body.length > maxBytes) tooLarge = true;
+    });
+    request.on('end', () => {
+      if (tooLarge) {
+        response.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: 'Request body too large' }));
+        return;
+      }
+      try {
+        callback(JSON.parse(body || '{}'));
+      } catch (error) {
+        response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: String(error?.message || 'Invalid JSON body') }));
+      }
+    });
   }
 
   stop() {
