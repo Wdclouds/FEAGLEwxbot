@@ -5,7 +5,7 @@
   "description": "Self-hosted WeChat to OneBot v11 bridge with AstrBot",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Wdclouds/FEAGLEwxbot-bridge.git"
+    "url": "https://github.com/Wdclouds/FEAGLEwxbot.git"
   },
   "type": "module",
   "scripts": {

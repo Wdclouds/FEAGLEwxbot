@@ -53,8 +53,8 @@ Docker 服务，应避开正在处理消息的时段。
 登录服务器后执行：
 
 ```bash
-git clone https://ghfast.top/https://github.com/Wdclouds/FEAGLEwxbot-bridge.git
-cd FEAGLEwxbot-bridge
+git clone https://ghfast.top/https://github.com/Wdclouds/FEAGLEwxbot.git
+cd FEAGLEwxbot
 chmod +x feagle wxbot-bridge scripts/*.sh
 ```
 

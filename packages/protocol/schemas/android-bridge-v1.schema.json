@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Wdclouds/FEAGLEwxbot-bridge/packages/protocol/schemas/android-bridge-v1.schema.json",
+  "$id": "https://github.com/Wdclouds/FEAGLEwxbot/packages/protocol/schemas/android-bridge-v1.schema.json",
   "title": "FEAGLE Android Agent to Bridge protocol v1",
   "type": "object",
   "required": ["protocol", "type"],

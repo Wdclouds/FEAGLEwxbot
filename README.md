@@ -54,8 +54,8 @@ Skill 暂不属于本次 Monorepo 迁移，后续会单独设计其职责和调�
 2 GB 内存和 10 GB 可用磁盘。
 
 ```bash
-git clone https://ghfast.top/https://github.com/Wdclouds/FEAGLEwxbot-bridge.git
-cd FEAGLEwxbot-bridge
+git clone https://ghfast.top/https://github.com/Wdclouds/FEAGLEwxbot.git
+cd FEAGLEwxbot
 chmod +x feagle wxbot-bridge scripts/*.sh
 ./feagle bridge setup
 ```
