@@ -1,0 +1,12 @@
+{
+  "protocol": "feagle.android.v1",
+  "type": "private_text",
+  "deviceId": "example-device",
+  "eventId": "example-event-1",
+  "talker": "example-wxid",
+  "displayName": "示例联系人",
+  "content": "你好",
+  "createTime": 0,
+  "msgId": 0,
+  "msgSvrId": 0
+}

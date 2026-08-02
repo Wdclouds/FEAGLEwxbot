@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-for script in "$PROJECT_DIR/wxbot-bridge" "$PROJECT_DIR"/scripts/*.sh; do
+for script in "$PROJECT_DIR/feagle" "$PROJECT_DIR/wxbot-bridge" "$PROJECT_DIR"/scripts/*.sh; do
   bash -n "$script"
 done
 
@@ -162,8 +162,8 @@ ASTRBOT_SOURCE_SHA256=$fetch_sha
 EOF
 FAKE_ASTRBOT_ARCHIVE="$fetch_case/astrbot.tar.gz" \
   PATH="$fake_bin:$PATH" "$fetch_case/scripts/fetch-astrbot.sh"
-[[ -f "$fetch_case/bot/AstrBot/requirements.txt" ]]
-[[ -f "$fetch_case/bot/AstrBot/main.py" ]]
+[[ -f "$fetch_case/apps/bridge/AstrBot/requirements.txt" ]]
+[[ -f "$fetch_case/apps/bridge/AstrBot/main.py" ]]
 
 bad_fetch_case="$temporary_root/bad-fetch-case"
 mkdir -p "$bad_fetch_case/scripts"
@@ -177,6 +177,6 @@ if FAKE_ASTRBOT_ARCHIVE="$fetch_case/astrbot.tar.gz" \
   printf 'SHA-256 不一致的 AstrBot 包被意外接受。\n' >&2
   exit 1
 fi
-[[ ! -e "$bad_fetch_case/bot/AstrBot" ]]
+[[ ! -e "$bad_fetch_case/apps/bridge/AstrBot" ]]
 
 printf 'Shell 向导测试通过。\n'

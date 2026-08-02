@@ -44,6 +44,6 @@ while (( SECONDS < deadline )); do
 done
 
 printf '\nDashboard 尚未在 180 秒内启动，请运行：\n' >&2
-printf '  %s/wxbot-bridge status\n' "$PROJECT_DIR" >&2
-printf '  %s/wxbot-bridge logs\n' "$PROJECT_DIR" >&2
+printf '  %s/feagle bridge status\n' "$PROJECT_DIR" >&2
+printf '  %s/feagle bridge logs\n' "$PROJECT_DIR" >&2
 exit 1

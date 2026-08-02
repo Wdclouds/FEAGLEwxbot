@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "platform": "windows-x64",
+  "java": {
+    "distribution": "Microsoft Build of OpenJDK",
+    "version": "17.0.19",
+    "fileName": "microsoft-jdk-17.0.19-windows-x64.zip",
+    "downloadUrl": "https://aka.ms/download-jdk/microsoft-jdk-17.0.19-windows-x64.zip",
+    "sha256": "394d1d8253d58b462300f15f9c81369478cf8813f82dca914c3b5dfdef080f9f",
+    "documentationUrl": "https://learn.microsoft.com/en-us/java/openjdk/download"
+  },
+  "androidCommandLineTools": {
+    "revision": "15859902",
+    "fileName": "commandlinetools-win-15859902_latest.zip",
+    "downloadUrl": "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip",
+    "sha256": "90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a",
+    "documentationUrl": "https://developer.android.com/studio"
+  },
+  "androidSdk": {
+    "packages": [
+      "platform-tools",
+      "build-tools;34.0.0",
+      "platforms;android-34"
+    ],
+    "licenseUrl": "https://developer.android.com/studio/terms"
+  },
+  "notes": [
+    "Java and command-line tool archives are accepted only after SHA-256 verification.",
+    "sdkmanager installs Android packages from Google's official repository.",
+    "Android SDK license acceptance must be explicit."
+  ]
+}

@@ -1,4 +1,4 @@
-name: CI
+name: Monorepo CI
 
 on:
   push:
@@ -8,18 +8,19 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  bridge:
+    name: Bridge and deployment guards
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: bot
+        working-directory: apps/bridge
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: bot/package-lock.json
+          cache-dependency-path: apps/bridge/package-lock.json
       - name: Check repository for secrets and runtime data
         working-directory: .
         run: ./scripts/check-secrets.sh
@@ -28,3 +29,62 @@ jobs:
         run: bash ./scripts/test-shell.sh
       - run: npm ci
       - run: npm test
+
+  protocol:
+    name: Shared protocol contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node ./packages/protocol/check.mjs
+
+  android-build:
+    name: Android Agent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: "17"
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Build Android Agent
+        working-directory: apps/android-agent
+        run: ./gradlew clean :app:assembleDebug --no-daemon
+
+  windows-tools:
+    name: Windows Android tools
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate WeChat metadata guard
+        shell: pwsh
+        run: ./tools/windows-android/feagle-android.ps1 validate-manifest
+      - name: Validate pinned Windows toolchain metadata
+        shell: pwsh
+        run: ./tools/windows-android/feagle-android.ps1 validate-toolchain
+      - name: Check tool bootstrap plan without downloads or license acceptance
+        shell: pwsh
+        run: ./tools/windows-android/feagle-android.ps1 bootstrap-tools -DryRun
+      - name: Validate Android Agent source and Gradle wrapper metadata
+        shell: pwsh
+        run: ./tools/windows-android/feagle-android.ps1 validate-android-source
+      - name: Test Android CLI extraction from a long repository path
+        shell: powershell
+        run: ./tools/windows-android/test-long-path-bootstrap.ps1
+      - name: Reject an APK that does not match the reference
+        shell: pwsh
+        run: |
+          Set-Content -LiteralPath ./invalid.apk -Value "not-an-apk" -NoNewline
+          ./tools/windows-android/feagle-android.ps1 verify-apk -ApkPath ./invalid.apk
+          if ($LASTEXITCODE -eq 0) {
+            throw "Invalid APK was unexpectedly accepted"
+          }
+          Write-Host "Invalid APK rejected as expected"
+          exit 0

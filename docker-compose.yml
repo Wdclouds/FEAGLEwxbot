@@ -1,7 +1,7 @@
 services:
   bot:
     build:
-      context: ./bot
+      context: ./apps/bridge
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
         ALPINE_MIRROR: ${ALPINE_MIRROR:-https://mirrors.aliyun.com/alpine}

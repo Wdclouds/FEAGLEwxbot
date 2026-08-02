@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_PATH="$PROJECT_DIR/.env"
-TARGET="$PROJECT_DIR/bot/AstrBot"
+TARGET="$PROJECT_DIR/apps/bridge/AstrBot"
 DEFAULT_VERSION=v4.26.7
 DEFAULT_SHA256=ad85c6405802752d4dc64c7d76c047cc815157e0fdae90079763eebd55fb9959
 

@@ -1,4 +1,4 @@
-# FEAGLEwxbot Bridge 项目介绍
+# FEAGLEwxbot 项目介绍
 
 [返回 README](../README.md) · [操作步骤说明书](./user-guide.md) ·
 [报错与日志积累](./troubleshooting.md)
@@ -228,15 +228,21 @@ AstrBot 仍可能把它识别为一段新会话。
 
 ```text
 .
-├── android/                 # Android Agent 与 8.0.70 适配器
-├── bot/
-│   ├── src/                # Bridge、微信、OneBot、AstrBot、Dashboard
-│   └── test/               # Node.js 自动化测试与手动冒烟入口
-├── docs/                   # 项目说明、操作手册和故障积累
-├── scripts/                # 安装、检查、下载与 Windows 隧道脚本
+├── apps/
+│   ├── android-agent/      # Android Agent 与 8.0.70 适配器
+│   └── bridge/
+│       ├── src/            # Bridge、微信、OneBot、AstrBot、Dashboard
+│       └── test/           # Node.js 自动化测试与手动冒烟入口
+├── tools/
+│   ├── windows-android/    # ADB、构建、安装、验证与配对
+│   └── windows-bridge/     # Dashboard/AstrBot SSH 隧道工具
+├── packages/protocol/      # Android Agent ↔ Bridge 协议契约
+├── docs/                   # 项目说明、Android 指南和故障积累
+├── scripts/                # 服务器安装、检查与下载脚本
 ├── .env.example            # 不含真实密钥的配置模板
 ├── docker-compose.yml
-└── wxbot-bridge            # 统一命令入口
+├── feagle                   # Monorepo 统一命令入口
+└── wxbot-bridge             # 服务器 Bridge 兼容入口
 ```
 
 ## 10. 上游与许可

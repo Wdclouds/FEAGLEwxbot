@@ -148,7 +148,7 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
       ;;
   esac
 else
-  fail "缺少 .env，请先运行 ./wxbot-bridge setup"
+  fail "缺少 .env，请先运行 ./feagle bridge setup"
 fi
 
 if [[ -d "$PROJECT_DIR/data" ]]; then

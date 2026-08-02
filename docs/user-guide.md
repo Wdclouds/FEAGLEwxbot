@@ -45,7 +45,7 @@
 AstrBot 的 SHA-256 校验，也不要把镜像地址改为 HTTP。
 
 Docker 基础镜像是例外：阿里云 ACR 的 Docker Hub 加速地址与账号绑定，项目不会猜测
-或代填第三方公共代理。`./wxbot-bridge doctor` 会检查 Docker 是否配置了镜像加速。
+或代填第三方公共代理。`./feagle bridge doctor` 会检查 Docker 是否配置了镜像加速。
 如果未配置，请在阿里云控制台打开“容器镜像服务 ACR → 镜像工具 → 镜像加速器”，
 复制当前账号的专属 HTTPS 地址并按页面说明配置 Docker。修改 Docker 配置会重启
 Docker 服务，应避开正在处理消息的时段。
@@ -55,7 +55,7 @@ Docker 服务，应避开正在处理消息的时段。
 ```bash
 git clone https://ghfast.top/https://github.com/Wdclouds/FEAGLEwxbot-bridge.git
 cd FEAGLEwxbot-bridge
-chmod +x wxbot-bridge scripts/*.sh
+chmod +x feagle wxbot-bridge scripts/*.sh
 ```
 
 该克隆地址已经在阿里云 ECS 实测可用。若加速入口临时不可用，可以删除
@@ -66,7 +66,7 @@ chmod +x wxbot-bridge scripts/*.sh
 ## 3. 运行首次配置
 
 ```bash
-./wxbot-bridge setup
+./feagle bridge setup
 ```
 
 向导会依次询问：
@@ -102,8 +102,8 @@ WECHAT_TRANSPORT=wechat4u
 如果配置向导没有立刻启动，执行：
 
 ```bash
-./wxbot-bridge doctor
-./wxbot-bridge start
+./feagle bridge doctor
+./feagle bridge start
 ```
 
 `doctor` 检查 Docker、Compose、CPU 架构、基础命令、`.env` 权限和模型 Key；
@@ -123,13 +123,13 @@ Android 模式还会检查配对密钥、私网绑定地址、端口与 WebSocke
 查看状态：
 
 ```bash
-./wxbot-bridge status
+./feagle bridge status
 ```
 
 查看实时日志：
 
 ```bash
-./wxbot-bridge logs
+./feagle bridge logs
 ```
 
 退出实时日志只需按 `Ctrl+C`，不会停止容器。
@@ -184,7 +184,7 @@ ssh \
 在本地仓库目录运行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\windows\install.ps1 `
+powershell -ExecutionPolicy Bypass -File .\tools\windows-bridge\install.ps1 `
   -SshTarget root@your-server
 ```
 
@@ -257,7 +257,7 @@ docker compose logs --tail 300 bot | grep -iE 'password|密码'
 
 ### 推荐：官方扫码配置
 
-首次运行 `./wxbot-bridge setup` 时选择配置飞书，再选择：
+首次运行 `./feagle bridge setup` 时选择配置飞书，再选择：
 
 ```text
 1) 扫码自动创建应用，或在授权页选择已有应用（推荐）
@@ -354,7 +354,7 @@ Dashboard 顶部进入“设置 / Settings”，可以修改：
 `data/` 中的 AstrBot 数据、Wechat4u Session、ID 映射、控制状态和 Android 配对均保留。
 模型 Key、飞书 Secret 和 Android Token 不在设置页中，应继续通过 AstrBot WebUI、
 安装向导或服务器环境变量管理。
-如果 Android 配对密钥尚未由 `./wxbot-bridge setup` 生成，Dashboard 会拒绝切换到
+如果 Android 配对密钥尚未由 `./feagle bridge setup` 生成，Dashboard 会拒绝切换到
 Android，避免重启后进入不可用状态。
 
 切换后机器人 OneBot 身份保持不变，但 Web 临时联系人 ID 不能可靠等同于 Android
@@ -394,7 +394,8 @@ openssl rand -hex 32
 
 不要把普通公网明文 `ws://` 直接暴露。完整的 APK 构建、设备配置、WSS、Tailscale、
 ACK 和版本限制见
-[FEAGLEwxbot Android Kit](https://github.com/Wdclouds/FEAGLEwxbot-android-kit)。
+[Android 接入工具](./android/index.md)。所有工具与 Agent 源码现在都位于同一个 Monorepo，
+不再需要另外克隆 Android Kit。
 
 切换后重新创建容器：
 
@@ -422,19 +423,19 @@ docker exec Feagle-wxbot node /app/src/android-pairing-cli.js revoke 设备ID
 ## 12. 日常命令
 
 ```bash
-./wxbot-bridge start      # 检查、构建并启动
-./wxbot-bridge stop       # 停止 bot 容器
-./wxbot-bridge restart    # 重启并等待健康检查
-./wxbot-bridge status     # 查看容器与 Dashboard 状态
-./wxbot-bridge logs       # 跟随最近 200 行日志
-./wxbot-bridge doctor     # 重新检查环境
+./feagle bridge start      # 检查、构建并启动
+./feagle bridge stop       # 停止 bot 容器
+./feagle bridge restart    # 重启并等待健康检查
+./feagle bridge status     # 查看容器与 Dashboard 状态
+./feagle bridge logs       # 跟随最近 200 行日志
+./feagle bridge doctor     # 重新检查环境
 ```
 
 如果需要在任意目录执行命令：
 
 ```bash
 sudo ./scripts/install-command.sh
-wxbot-bridge
+feagle bridge
 ```
 
 ## 13. 备份与迁移
@@ -452,13 +453,13 @@ data/
 建议维护窗口：
 
 ```bash
-./wxbot-bridge stop
+./feagle bridge stop
 ```
 
 完成加密备份或迁移后再启动：
 
 ```bash
-./wxbot-bridge start
+./feagle bridge start
 ```
 
 不要为了排错随意删除 `data/`。消息收据和控制状态丢失后，可能出现旧消息重新处理、
@@ -477,7 +478,7 @@ data/
 ```bash
 git status
 git pull --ff-only
-./wxbot-bridge start
+./feagle bridge start
 ```
 
 如果 `git pull --ff-only` 拒绝执行，不要使用 `git reset --hard`。先确认本地修改来源，
@@ -487,7 +488,7 @@ git pull --ff-only
 
 - 临时不回复但保留 Session：Dashboard 选择 `PAUSED`。
 - 需要微信协议主动退出且不告警：选择 `MANUAL_OFFLINE`。
-- 只停止容器：`./wxbot-bridge stop`。
+- 只停止容器：`./feagle bridge stop`。
 - 只关闭本地 Windows 隧道：`wxbot bridge exit`。
 
 遇到异常时不要反复重启或连续扫码。先进入

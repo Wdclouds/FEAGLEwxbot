@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+PROJECT_DIR="${FEAGLE_WXBOT_HOME:-$(dirname "$SCRIPT_PATH")}"
+
+usage() {
+  cat <<'EOF'
+FEAGLE WxBot Monorepo
+
+Usage:
+  feagle bridge [setup|doctor|start|stop|restart|status|logs]
+  feagle android
+  feagle protocol check
+  feagle help
+
+Windows users can run:
+  .\feagle.cmd bridge start
+  .\feagle.cmd android doctor
+EOF
+}
+
+component="${1:-help}"
+if [[ $# -gt 0 ]]; then shift; fi
+
+case "$component" in
+  bridge)
+    exec "$PROJECT_DIR/wxbot-bridge" "$@"
+    ;;
+  android)
+    cat <<'EOF'
+Android 设备准备工具运行在 Windows PowerShell：
+  .\feagle.cmd android doctor
+  .\feagle.cmd android build-agent
+
+完整说明：docs/android/index.md
+EOF
+    ;;
+  protocol)
+    if [[ "${1:-check}" != check ]]; then
+      usage
+      exit 2
+    fi
+    exec node "$PROJECT_DIR/packages/protocol/check.mjs"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

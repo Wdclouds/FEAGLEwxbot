@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FEAGLEwxbot Agent</string>
+    <string name="app_description">Android Hook transport agent for FEAGLEwxbot Bridge</string>
+    <string name="xposed_description">微信 8.0.70 私聊文本桥接模块；作用域仅限微信。</string>
+</resources>
