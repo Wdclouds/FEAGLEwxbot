@@ -139,6 +139,11 @@ final class Wechat8070Adapter {
                 || expected.isAssignableFrom(actual);
     }
 
+    private static boolean isGroupTalker(String talker) {
+        return talker != null
+                && talker.toLowerCase(java.util.Locale.ROOT).endsWith("@chatroom");
+    }
+
     static void sendText(ClassLoader classLoader, String talker, String content)
             throws Throwable {
         Class<?> factory = XposedHelpers.findClass(SEND_FACTORY_CLASS, classLoader);
@@ -175,6 +180,17 @@ final class Wechat8070Adapter {
                     message, "field_msgSvrId", null, 0L);
             boolean mentioned = booleanFieldOrMethod(
                     message, "field_isAt", "isAt", false);
+            // 8.0.70 混淆后 field_isAt/isAt 常读不到。群聊被 @ 时 content
+            // 形如 "发送者wxid:\n@昵称 内容"，冒号后的正文以 '@' 开头即视为被 @。
+            if (!mentioned && isGroupTalker(talker) && content != null) {
+                String body = content;
+                int sep = body.indexOf(":\n");
+                if (sep >= 0) {
+                    body = body.substring(sep + 2);
+                }
+                body = body.trim();
+                mentioned = body.startsWith("@");
+            }
 
             WechatHook.captureTextFields(
                     "wechat-8.0.70/" + source,
