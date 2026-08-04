@@ -156,6 +156,12 @@ public final class BridgeForegroundService extends Service {
                 case AgentProtocol.MSG_GROUP_TEXT:
                     forwardGroupText(message.getData());
                     break;
+                case AgentProtocol.MSG_PRIVATE_IMAGE:
+                    forwardPrivateImage(message.getData());
+                    break;
+                case AgentProtocol.MSG_GROUP_IMAGE:
+                    forwardGroupImage(message.getData());
+                    break;
                 case AgentProtocol.MSG_COMMAND_RESULT:
                     forwardCommandResult(message.getData());
                     break;
@@ -163,6 +169,62 @@ public final class BridgeForegroundService extends Service {
                     super.handleMessage(message);
             }
         }
+    }
+
+    private void forwardGroupImage(Bundle data) {
+        String eventId = data.getString("event_id", "").trim();
+        String talker = data.getString("talker", "").trim();
+        String sender = data.getString("sender", "").trim();
+        String imageBase64 = data.getString("image_base64", "");
+        // 群聊图片的 sender 解析尚未实现（Hook 暂传空），先静默丢弃，
+        // 待群聊图片策略确定后补齐（MENTION_ONLY / 白名单 / sender 提取）。
+        if (sender.isEmpty()) {
+            return;
+        }
+        if (eventId.isEmpty() || !validGroupTalker(talker)
+                || !validGroupSender(sender)
+                || imageBase64.isEmpty() || imageBase64.length() > 7 * 1024 * 1024) {
+            return;
+        }
+        if (recentInboundEvents.containsKey(eventId)) return;
+
+        JSONObject event = baseEnvelope("group_image");
+        put(event, "eventId", eventId);
+        put(event, "talker", talker);
+        put(event, "sender", sender);
+        put(event, "imageBase64", imageBase64);
+        put(event, "mime", data.getString("mime", "image/jpeg"));
+        put(event, "imageSize", data.getInt("image_size", 0));
+        put(event, "createTime", data.getLong("create_time", 0));
+        put(event, "msgId", data.getLong("msg_id", 0));
+        put(event, "msgSvrId", data.getLong("msg_svr_id", 0));
+        recentInboundEvents.put(eventId, Boolean.TRUE);
+        sendOrQueueTransient(event.toString());
+    }
+
+    private void forwardPrivateImage(Bundle data) {
+        String eventId = data.getString("event_id", "").trim();
+        String talker = data.getString("talker", "").trim();
+        String displayName = data.getString("display_name", "").trim();
+        String imageBase64 = data.getString("image_base64", "");
+        if (eventId.isEmpty() || !validPrivateTalker(talker)
+                || imageBase64.isEmpty() || imageBase64.length() > 7 * 1024 * 1024) {
+            return;
+        }
+        if (recentInboundEvents.containsKey(eventId)) return;
+
+        JSONObject event = baseEnvelope("private_image");
+        put(event, "eventId", eventId);
+        put(event, "talker", talker);
+        put(event, "displayName", displayName);
+        put(event, "imageBase64", imageBase64);
+        put(event, "mime", data.getString("mime", "image/jpeg"));
+        put(event, "imageSize", data.getInt("image_size", 0));
+        put(event, "createTime", data.getLong("create_time", 0));
+        put(event, "msgId", data.getLong("msg_id", 0));
+        put(event, "msgSvrId", data.getLong("msg_svr_id", 0));
+        recentInboundEvents.put(eventId, Boolean.TRUE);
+        sendOrQueueTransient(event.toString());
     }
 
     private void forwardPrivateText(Bundle data) {

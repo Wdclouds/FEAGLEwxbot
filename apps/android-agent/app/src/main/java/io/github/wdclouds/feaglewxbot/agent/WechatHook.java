@@ -149,6 +149,203 @@ public final class WechatHook implements IXposedHookLoadPackage {
                 false);
     }
 
+    /**
+     * 正式图片捕获（2026-08-04，字段名已实测确认）：
+     * field_imgPath 值形如 "THUMBNAIL_DIRPATH://th_<32hex>"。
+     * 后台线程：定位缩略图文件（带重试）→ 压缩 JPEG（Binder 传输限制
+     * ~1MB，目标 <200KB）→ base64 → 协议 7/8 上报 BridgeForegroundService。
+     */
+    static void captureImage(
+            String source,
+            String imgPathValue,
+            String talker,
+            long createTime,
+            long msgId,
+            long msgSvrId) {
+        if (imgPathValue == null || imgPathValue.isEmpty()) {
+            return;
+        }
+        String eventId = eventId(
+                talker, "image:" + imgPathValue, createTime, msgId, msgSvrId);
+        synchronized (recentEvents) {
+            if (recentEvents.containsKey(eventId)) {
+                return;
+            }
+            recentEvents.put(eventId, Boolean.TRUE);
+        }
+        String thumbHash = parseThumbHash(imgPathValue);
+        if (thumbHash == null) {
+            log("image path parse failed val=" + preview(imgPathValue));
+            return;
+        }
+        boolean group = talker != null
+                && talker.toLowerCase(Locale.ROOT).endsWith("@chatroom");
+        final int messageType = group
+                ? AgentProtocol.MSG_GROUP_IMAGE : AgentProtocol.MSG_PRIVATE_IMAGE;
+        log("image captured chat=" + (group ? "group" : "private")
+                + " hash=" + thumbHash + " source=" + source);
+        Thread worker = new Thread(() -> {
+            try {
+                java.io.File file = resolveThumbFile(thumbHash, 10_000);
+                if (file == null) {
+                    log("image file not found hash=" + thumbHash);
+                    return;
+                }
+                byte[] jpeg = compressToJpeg(file, 1024, 72);
+                if (jpeg == null || jpeg.length == 0) {
+                    log("image compress failed hash=" + thumbHash);
+                    return;
+                }
+                String b64 = android.util.Base64.encodeToString(
+                        jpeg, android.util.Base64.NO_WRAP);
+                sendImageToAgent(
+                        messageType, eventId, talker, "", b64, "image/jpeg",
+                        jpeg.length, createTime, msgId, msgSvrId);
+                log("image forwarded type=" + messageType
+                        + " bytes=" + jpeg.length + " b64len=" + b64.length());
+            } catch (Throwable error) {
+                logError("image capture worker failed", error);
+            }
+        }, "feagle-img");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private static String parseThumbHash(String imgPathValue) {
+        int idx = imgPathValue.lastIndexOf("th_");
+        if (idx < 0) {
+            return null;
+        }
+        String hash = imgPathValue.substring(idx + 3).trim();
+        return hash.matches("^[0-9a-fA-F]{32}$") ? hash : null;
+    }
+
+    /** 在 MicroMsg/<md5>/image2/<前2>/<次2>/ 下定位 th_<hash>，带轮询重试。 */
+    private static java.io.File resolveThumbFile(String hash, long timeoutMs) {
+        if (appContext == null) {
+            return null;
+        }
+        java.io.File microMsg = new java.io.File(
+                appContext.getFilesDir().getParentFile(), "MicroMsg");
+        if (!microMsg.isDirectory()) {
+            return null;
+        }
+        String dir1 = hash.substring(0, 2);
+        String dir2 = hash.substring(2, 4);
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        java.io.File[] userDirs = microMsg.listFiles();
+        if (userDirs == null) {
+            return null;
+        }
+        for (java.io.File userDir : userDirs) {
+            if (!userDir.isDirectory()
+                    || !userDir.getName().matches("^[0-9a-f]{32}$")) {
+                continue;
+            }
+            java.io.File thumb = new java.io.File(
+                    new java.io.File(new java.io.File(userDir, "image2"), dir1), dir2);
+            java.io.File thumbFile = new java.io.File(thumb, "th_" + hash);
+            if (tryWaitFile(thumbFile, deadline)) {
+                return thumbFile;
+            }
+        }
+        return null;
+    }
+
+    private static boolean tryWaitFile(java.io.File file, long deadline) {
+        while (System.currentTimeMillis() < deadline) {
+            if (file.isFile() && file.length() > 0) {
+                return true;
+            }
+            try {
+                Thread.sleep(400);
+            } catch (InterruptedException ignored) {
+                return false;
+            }
+        }
+        return file.isFile() && file.length() > 0;
+    }
+
+    /** 解码 → 等比缩到最长边 ≤ maxEdge → JPEG 压缩（子线程调用，内存友好）。 */
+    private static byte[] compressToJpeg(java.io.File file, int maxEdge, int quality) {
+        android.graphics.BitmapFactory.Options opts =
+                new android.graphics.BitmapFactory.Options();
+        opts.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath(), opts);
+        if (opts.outWidth <= 0 || opts.outHeight <= 0) {
+            return null;
+        }
+        int sample = 1;
+        while (opts.outWidth / sample > maxEdge * 2
+                || opts.outHeight / sample > maxEdge * 2) {
+            sample *= 2;
+        }
+        opts.inJustDecodeBounds = false;
+        opts.inSampleSize = sample;
+        android.graphics.Bitmap bitmap =
+                android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath(), opts);
+        if (bitmap == null) {
+            return null;
+        }
+        try {
+            int w = bitmap.getWidth();
+            int h = bitmap.getHeight();
+            if (Math.max(w, h) > maxEdge) {
+                float scale = (float) maxEdge / Math.max(w, h);
+                android.graphics.Bitmap scaled = android.graphics.Bitmap
+                        .createScaledBitmap(bitmap,
+                                Math.max(1, Math.round(w * scale)),
+                                Math.max(1, Math.round(h * scale)), true);
+                if (scaled != bitmap) {
+                    bitmap.recycle();
+                    bitmap = scaled;
+                }
+            }
+            java.io.ByteArrayOutputStream bos =
+                    new java.io.ByteArrayOutputStream();
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,
+                    quality, bos);
+            return bos.toByteArray();
+        } finally {
+            if (!bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
+        }
+    }
+
+    private static void sendImageToAgent(
+            int messageType, String eventId, String talker, String sender,
+            String imageBase64, String mime, int size,
+            long createTime, long msgId, long msgSvrId) {
+        if (agentMessenger == null) {
+            return;
+        }
+        try {
+            Message outbound = Message.obtain(null, messageType);
+            Bundle data = new Bundle();
+            data.putString("event_id", eventId);
+            data.putString("talker", talker);
+            data.putString("sender", sender);
+            data.putString("image_base64", imageBase64);
+            data.putString("mime", mime);
+            data.putInt("image_size", size);
+            data.putLong("create_time", createTime);
+            data.putLong("msg_id", msgId);
+            data.putLong("msg_svr_id", msgSvrId);
+            outbound.setData(data);
+            sendToAgent(outbound);
+        } catch (Throwable error) {
+            logError("image send failed", error);
+        }
+    }
+
+    private static String preview(String s) {
+        if (s.length() <= 40) {
+            return s;
+        }
+        return s.substring(0, 40) + "...";
+    }
+
     private static void sendCapturedText(
             String source,
             int messageType,

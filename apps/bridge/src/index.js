@@ -212,6 +212,8 @@ const commonWechatOptions = {
   initialAdminMode: savedControl.wechatAdminMode,
   onPrivateText: async (message) => onebot.sendPrivateText(message),
   onGroupText: async (message) => onebot.sendGroupText(message),
+  onPrivateImage: async (message) => onebot.sendPrivateImage(message),
+  onGroupImage: async (message) => onebot.sendGroupImage(message),
   initialGroupChatMode: savedControl.groupChatMode,
   initialGroupAllowlist: savedControl.groupAllowlist,
   initialGroupBlockedTerms: savedControl.groupBlockedTerms,

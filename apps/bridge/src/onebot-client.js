@@ -259,6 +259,101 @@ export class OneBotClient {
     return pendingId;
   }
 
+  async sendPrivateImage({
+    userId,
+    nickname,
+    imageBase64,
+    wechatMessageId,
+  }) {
+    await this.waitForConnection();
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      throw new Error('AstrBot OneBot WebSocket 未连接');
+    }
+    const pendingId = this.reserveRequest(userId);
+    const event = {
+      time: Math.floor(Date.now() / 1000),
+      self_id: this.selfId,
+      post_type: 'message',
+      message_type: 'private',
+      sub_type: 'friend',
+      message_id: 0,
+      user_id: userId,
+      message: [{ type: 'image', data: { file: `base64://${imageBase64}` } }],
+      raw_message: '[CQ:image]',
+      font: 0,
+      sender: {
+        user_id: userId,
+        nickname,
+        sex: 'unknown',
+        age: 0,
+      },
+    };
+    try {
+      const messageId = this.idMap.storeMessage(wechatMessageId, event);
+      event.message_id = messageId;
+      this.idMap.updateMessage(messageId, event);
+      this.sendEvent(event);
+      this.state.increment('forwarded');
+    } catch (error) {
+      this.releaseRequest(pendingId);
+      throw error;
+    }
+    return pendingId;
+  }
+
+  async sendGroupImage({
+    groupId,
+    groupName,
+    userId,
+    nickname,
+    imageBase64,
+    wechatMessageId,
+  }) {
+    await this.waitForConnection();
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      throw new Error('AstrBot OneBot WebSocket 未连接');
+    }
+    const pendingKey = `group:${groupId}`;
+    const pendingId = this.reserveRequest(pendingKey);
+    const event = {
+      time: Math.floor(Date.now() / 1000),
+      self_id: this.selfId,
+      post_type: 'message',
+      message_type: 'group',
+      sub_type: 'normal',
+      message_id: 0,
+      group_id: Number(groupId),
+      user_id: Number(userId),
+      message: [{ type: 'image', data: { file: `base64://${imageBase64}` } }],
+      raw_message: '[CQ:image]',
+      font: 0,
+      sender: {
+        user_id: Number(userId),
+        nickname,
+        card: nickname,
+        sex: 'unknown',
+        age: 0,
+        area: '',
+        level: '',
+        role: 'member',
+        title: '',
+      },
+      anonymous: null,
+      group_name: groupName,
+    };
+    try {
+      const messageId = this.idMap.storeMessage(wechatMessageId, event);
+      event.message_id = messageId;
+      this.idMap.updateMessage(messageId, event);
+      this.sendEvent(event);
+      this.state.increment('forwarded');
+    } catch (error) {
+      this.releaseRequest(pendingId);
+      throw error;
+    }
+    return pendingId;
+  }
+
   waitForConnection() {
     if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
     if (this.stopping) {
@@ -362,6 +457,8 @@ export class OneBotClient {
       return;
     }
     if (!request?.action) return;
+
+    console.log(`[OneBot] action=${request.action} params=${JSON.stringify(request.params || {}).slice(0, 300)}`);
 
     const { action, params = {}, echo } = request;
     let response;
@@ -528,6 +625,7 @@ export class OneBotClient {
         'GROUP_REPLY_TOO_LONG',
       ].includes(error?.code);
       if (!expectedSafetyRejection) this.state.addError(`onebot-action:${action}`, error);
+      console.log(`[OneBot] action error (${action}):`, error?.stack || String(error));
       response = failed(error.message || String(error), echo);
     }
 

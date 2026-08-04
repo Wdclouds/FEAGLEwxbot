@@ -94,6 +94,8 @@ export class AndroidWechatClient {
     messageGuard,
     onPrivateText,
     onGroupText = async () => {},
+    onPrivateImage = async () => {},
+    onGroupImage = async () => {},
     host = process.env.ANDROID_WS_HOST || '0.0.0.0',
     port = positiveInteger(process.env.ANDROID_WS_PORT, 6191),
     path = process.env.ANDROID_WS_PATH || '/android',
@@ -140,6 +142,8 @@ export class AndroidWechatClient {
     this.messageGuard = messageGuard;
     this.onPrivateText = onPrivateText;
     this.onGroupText = onGroupText;
+    this.onPrivateImage = onPrivateImage;
+    this.onGroupImage = onGroupImage;
     this.host = host;
     this.port = port;
     this.path = path.startsWith('/') ? path : `/${path}`;
@@ -219,7 +223,7 @@ export class AndroidWechatClient {
       host: this.host,
       port: this.port,
       path: this.path,
-      maxPayload: 64 * 1024,
+      maxPayload: 10 * 1024 * 1024,
       verifyClient: ({ req }, done) => {
         const url = new URL(req.url || this.path, 'ws://localhost');
         if (url.searchParams.get('mode') === 'pair') {
@@ -335,6 +339,12 @@ export class AndroidWechatClient {
         break;
       case 'group_text':
         await this.handleGroupText(socket, message);
+        break;
+      case 'private_image':
+        await this.handlePrivateImage(socket, message);
+        break;
+      case 'group_image':
+        await this.handleGroupImage(socket, message);
         break;
       case 'command_result':
         this.handleCommandResult(message);
@@ -553,6 +563,148 @@ export class AndroidWechatClient {
         error?.code === 'UPSTREAM_BUSY' ? 5_000 : 3_000,
         error?.code || 'forward_failed',
       );
+    } finally {
+      this.processingEvents.delete(receiptId);
+    }
+  }
+
+  async handlePrivateImage(socket, message) {
+    const eventId = String(message.eventId || '').trim();
+    const talker = String(message.talker || '').trim();
+    const nickname = displayName(message.displayName);
+    const imageBase64 = typeof message.imageBase64 === 'string'
+      ? message.imageBase64
+      : '';
+    const b64Len = imageBase64.length;
+    if (
+      !validIdentifier(eventId)
+      || !validPrivateTalker(talker)
+      || b64Len === 0
+      || b64Len > 7 * 1024 * 1024 // base64 上限 ~7MB（对应 ~5MB 二进制）
+    ) {
+      socket.close(1008, 'Invalid event');
+      return;
+    }
+
+    const receiptId = `android:${socket.feagle.deviceId}:${eventId}`;
+    const receipt = this.idMap.messageReceipt(receiptId);
+    if (TERMINAL_RECEIPT_STATUSES.has(receipt?.status)) {
+      this.ack(socket, eventId);
+      return;
+    }
+    if (this.processingEvents.has(receiptId)) {
+      this.nack(socket, eventId, 2_000, 'event_in_progress');
+      return;
+    }
+
+    if (!receipt) this.idMap.claimMessage(receiptId, 'android-private-image');
+    this.processingEvents.add(receiptId);
+    this.state.increment('received');
+
+    try {
+      if (
+        this.adminMode !== WECHAT_ADMIN_MODES.RUNNING
+        || this.isSleeping()
+      ) {
+        this.idMap.updateMessageReceipt(receiptId, 'DROPPED');
+        this.state.increment('dropped');
+        this.ack(socket, eventId);
+        return;
+      }
+
+      const userId = this.idMap.entity(
+        'user',
+        talker,
+        talker,
+        nickname,
+      );
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `Android contact ${userId}`,
+        text: '[图片]',
+        status: 'RECEIVED',
+      });
+      await this.onPrivateImage({
+        userId,
+        nickname,
+        imageBase64,
+        wechatMessageId: receiptId,
+        createTime: normalizeTimestamp(message.createTime),
+      });
+      this.idMap.updateMessageReceipt(receiptId, 'FORWARDED');
+      this.ack(socket, eventId);
+    } catch (error) {
+      this.idMap.releaseMessageReceipt(receiptId);
+      this.state.addError('android-private-image-forward', error);
+      this.nack(
+        socket,
+        eventId,
+        error?.code === 'UPSTREAM_BUSY' ? 5_000 : 3_000,
+        error?.code || 'forward_failed',
+      );
+    } finally {
+      this.processingEvents.delete(receiptId);
+    }
+  }
+
+  async handleGroupImage(socket, message) {
+    // TODO(2026-08-04): 群聊图片策略未定（MENTION_ONLY 下群图是否响应需产品决策）。
+    // 探测阶段 Agent 不会发 group_image。先做最小校验 + 转发，正式实现时
+    // 对齐 handleGroupText 的 groupChatMode/白名单/@ 判定。
+    const eventId = String(message.eventId || '').trim();
+    const talker = String(message.talker || '').trim();
+    const sender = String(message.sender || '').trim();
+    const imageBase64 = typeof message.imageBase64 === 'string'
+      ? message.imageBase64
+      : '';
+    if (
+      !validIdentifier(eventId)
+      || !validGroupTalker(talker)
+      || !validIdentifier(sender)
+      || imageBase64.length === 0
+      || imageBase64.length > 7 * 1024 * 1024
+    ) {
+      socket.close(1008, 'Invalid event');
+      return;
+    }
+    const receiptId = `android:${socket.feagle.deviceId}:${eventId}`;
+    if (this.processingEvents.has(receiptId)) {
+      this.nack(socket, eventId, 2_000, 'event_in_progress');
+      return;
+    }
+    this.processingEvents.add(receiptId);
+    try {
+      const groupId = this.idMap.entity(
+        'group',
+        talker,
+        talker,
+        'Android group',
+      );
+      const userId = this.idMap.entity(
+        'group_member',
+        sender,
+        sender,
+        sender,
+      );
+      this.state.addMessage({
+        direction: 'IN',
+        peer: `Group ${groupId}`,
+        text: '[图片]',
+        status: 'RECEIVED',
+      });
+      await this.onGroupImage({
+        groupId,
+        groupName: 'Android group',
+        userId,
+        nickname: sender,
+        imageBase64,
+        wechatMessageId: receiptId,
+        createTime: normalizeTimestamp(message.createTime),
+      });
+      this.ack(socket, eventId);
+    } catch (error) {
+      this.state.addError('android-group-image-forward', error);
+      this.nack(socket, eventId, 3_000, error?.code || 'forward_failed');
     } finally {
       this.processingEvents.delete(receiptId);
     }

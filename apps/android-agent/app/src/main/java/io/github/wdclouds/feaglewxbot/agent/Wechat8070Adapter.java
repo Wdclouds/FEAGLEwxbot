@@ -202,6 +202,21 @@ final class Wechat8070Adapter {
                     msgId,
                     msgSvrId,
                     mentioned);
+            if (type == 3) {
+                // 图片消息：8.0.70 字段名已实测确认（field_imgPath，
+                // 值 THUMBNAIL_DIRPATH://th_<32hex>），走正式捕获。
+                String imgPath = stringFieldOrMethods(
+                        message,
+                        "field_imgPath",
+                        new String[]{"field_imgPath", "getImgPath", "imgPath"});
+                WechatHook.captureImage(
+                        "wechat-8.0.70/" + source,
+                        imgPath,
+                        talker,
+                        createTime,
+                        msgId,
+                        msgSvrId);
+            }
         } catch (Throwable error) {
             WechatHook.logAdapterError("8.0.70 message capture failed", error);
         }
