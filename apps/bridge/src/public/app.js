@@ -51,25 +51,25 @@ const statusLabels = {
 };
 
 const messageStatusLabels = {
-  RECEIVED: '已接收 / RECEIVED',
-  SENT: '已发送 / SENT',
-  'SLEEP-DROP': '休眠丢弃 / SLEEP DROP',
-  'ADMIN-PAUSED': '暂停丢弃 / PAUSED',
-  'UPSTREAM-BUSY': '上游繁忙 / BUSY',
-  'FORWARD-FAILED': '转发失败 / FAILED',
-  'DUPLICATE-REPLAY': '重放拦截 / REPLAY BLOCKED',
-  'STALE-REPLAY': '过期拦截 / STALE BLOCKED',
-  'GROUP-OFF': '群聊关闭 / GROUP OFF',
-  'GROUP-OBSERVED': '群聊观察 / OBSERVED',
-  'GROUP-NOT-ALLOWED': '群不在白名单 / NOT ALLOWED',
-  'GROUP-NOT-MENTIONED': '未 @ 机器人 / NOT MENTIONED',
-  'GROUP-EMPTY-MENTION': '空 @ / EMPTY MENTION',
-  'GROUP-MENTION': '群聊 @ / GROUP MENTION',
-  'GROUP-SENT': '群聊已发送 / GROUP SENT',
-  'GROUP-POLICY-BLOCKED': '本地策略拦截 / POLICY BLOCKED',
-  'GROUP-MEMBER-RATE-LIMITED': '成员限流 / MEMBER RATE',
-  'GROUP-RATE-LIMITED': '群聊限流 / GROUP RATE',
-  'GROUP-FUSED': '群聊熔断 / GROUP FUSED',
+  RECEIVED: 'RECEIVED',
+  SENT: 'SENT',
+  'SLEEP-DROP': 'SLEEP DROP',
+  'ADMIN-PAUSED': 'PAUSED',
+  'UPSTREAM-BUSY': 'BUSY',
+  'FORWARD-FAILED': 'FAILED',
+  'DUPLICATE-REPLAY': 'REPLAY BLOCKED',
+  'STALE-REPLAY': 'STALE BLOCKED',
+  'GROUP-OFF': 'GROUP OFF',
+  'GROUP-OBSERVED': 'OBSERVED',
+  'GROUP-NOT-ALLOWED': 'NOT ALLOWED',
+  'GROUP-NOT-MENTIONED': 'NOT MENTIONED',
+  'GROUP-EMPTY-MENTION': 'EMPTY MENTION',
+  'GROUP-MENTION': 'GROUP MENTION',
+  'GROUP-SENT': 'GROUP SENT',
+  'GROUP-POLICY-BLOCKED': 'POLICY BLOCKED',
+  'GROUP-MEMBER-RATE-LIMITED': 'MEMBER RATE',
+  'GROUP-RATE-LIMITED': 'GROUP RATE',
+  'GROUP-FUSED': 'GROUP FUSED',
 };
 
 function bilingualStatus(value) {
@@ -232,6 +232,7 @@ function render(state) {
   const android = state.android || {};
   const androidActive = transport.active === 'android';
   $('transport-name').textContent = androidActive ? 'Android Hook' : 'Wechat4u Web';
+  $('transport-current').textContent = androidActive ? 'Android Hook' : 'Wechat4u Web';
   $('transport-detail').textContent = transport.detail || '';
   $('android-diagnostics').hidden = !androidActive;
   if (androidActive) {
@@ -338,7 +339,7 @@ function render(state) {
   } else {
     $('messages').replaceChildren(...state.messages.map((message) => {
       const row = document.createElement('tr');
-      const direction = message.direction === 'IN' ? '接收 / IN' : '发送 / OUT';
+      const direction = message.direction === 'IN' ? 'IN' : 'OUT';
       const messageStatus = messageStatusLabels[message.status] || message.status;
       [time(message.time), direction, message.peer, message.text, messageStatus]
         .forEach((value, index) => {
@@ -377,7 +378,10 @@ function setTheme(theme) {
   const normalized = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = normalized;
   localStorage.setItem('feagle-theme', normalized);
-  $('theme-icon').textContent = normalized === 'light' ? '☀' : '☾';
+  const logo = $('brand-logo');
+  if (logo) logo.src = normalized === 'light'
+    ? '/assets/icons/feaglew.svg'
+    : '/assets/icons/feagleb.svg';
   $('theme-label').textContent = normalized === 'light'
     ? '白天 / Light'
     : '夜间 / Dark';
@@ -400,6 +404,116 @@ async function setAdminMode(mode) {
   render(payload);
 }
 
+// ─────────────────────────────────────────────────────────────
+// 视图路由（hash-based SPA）
+// ─────────────────────────────────────────────────────────────
+const VIEWS = ['overview', 'traffic', 'groups', 'settings-traffic'];
+
+function currentView() {
+  const hash = window.location.hash.replace(/^#\/?/, '');
+  return VIEWS.includes(hash) ? hash : 'overview';
+}
+
+function applyView(view) {
+  document.querySelectorAll('.view').forEach((section) => {
+    section.classList.toggle('active', section.dataset.view === view);
+  });
+  document.querySelectorAll('.bottom-nav a').forEach((link) => {
+    link.classList.toggle('active', link.dataset.viewLink === view);
+  });
+  // 懒加载设置数据：总览（通道 radio 初始化）与流量安全
+  if (view === 'overview' || view === 'settings-traffic') {
+    loadSettings();
+  }
+  window.scrollTo(0, 0);
+}
+
+function navigate() {
+  applyView(currentView());
+}
+
+// ─────────────────────────────────────────────────────────────
+// 设置页逻辑（合并自原 settings.js）
+// ─────────────────────────────────────────────────────────────
+let activeTransport = 'wechat4u';
+
+function mutationHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'X-FEAGLE-Dashboard': '1',
+  };
+}
+
+function renderSettings(settings) {
+  activeTransport = settings.transport;
+  $('transport-current').textContent = activeTransport === 'android' ? 'Android Hook' : 'Wechat4u Web';
+  document.querySelector(`input[name="transport"][value="${activeTransport}"]`).checked = true;
+  for (const input of document.querySelectorAll('[data-setting]')) {
+    const scale = Number(input.dataset.scale || 1);
+    input.value = Number.isFinite(Number(settings[input.dataset.setting]))
+      && input.type === 'number'
+      ? Number(settings[input.dataset.setting]) / scale
+      : settings[input.dataset.setting] ?? '';
+  }
+}
+
+function collectSettings(form) {
+  const values = {};
+  for (const input of form.querySelectorAll('[data-setting]')) {
+    const key = input.dataset.setting;
+    if (input.type === 'radio') {
+      // 单选组只提交选中的值
+      if (input.checked) values[key] = input.value;
+    } else if (input.type === 'number') {
+      const scale = Number(input.dataset.scale || 1);
+      values[key] = Math.round(Number(input.value) * scale);
+    } else {
+      values[key] = input.value.trim();
+    }
+  }
+  return values;
+}
+
+async function loadSettings() {
+  try {
+    const response = await fetch('/api/settings');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '读取设置失败');
+    renderSettings(payload.settings);
+  } catch (error) {
+    const statusEl = $('save-status-transport') || $('save-status-limits');
+    if (statusEl) statusEl.textContent = `读取失败 / Load failed: ${error.message}`;
+  }
+}
+
+// 保存表单（transport 或 limits 视图）
+function bindSave(formId, statusId) {
+  $(`save-${formId}`).addEventListener('click', async () => {
+    const form = $(`${formId}-settings-form`);
+    const button = $(`save-${formId}`);
+    const status = $(statusId);
+    if (!form.reportValidity()) return;
+    button.disabled = true;
+    status.textContent = '正在校验并保存 / Validating and saving...';
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: mutationHeaders(),
+        body: JSON.stringify(collectSettings(form)),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || '保存失败');
+      status.textContent = '设置已保存，Bridge 正在重启；数秒后刷新页面 / Restarting, refresh shortly.';
+    } catch (error) {
+      status.textContent = `保存失败 / Failed: ${error.message}`;
+      button.disabled = false;
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// 事件绑定
+// ─────────────────────────────────────────────────────────────
 setInterval(() => {
   $('clock').textContent = time(new Date());
 }, 1000);
@@ -408,6 +522,9 @@ setTheme(document.documentElement.dataset.theme);
 fetch('/api/status').then((response) => response.json()).then(render);
 const events = new EventSource('/events');
 events.onmessage = (event) => render(JSON.parse(event.data));
+
+window.addEventListener('hashchange', navigate);
+applyView(currentView());
 
 $('theme-toggle').addEventListener('click', () => {
   setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
@@ -561,3 +678,35 @@ $('force-relogin-test').addEventListener('click', async () => {
     button.disabled = false;
   }
 });
+
+// 设置页事件
+$('switch-transport').addEventListener('click', async () => {
+  const button = $('switch-transport');
+  const hint = $('transport-hint');
+  const selected = document.querySelector('input[name="transport"]:checked')?.value;
+  if (!selected || selected === activeTransport) {
+    hint.textContent = '当前已经是这个通道 / This transport is already active.';
+    return;
+  }
+  if (!window.confirm(
+    `确认从 ${activeTransport} 切换到 ${selected}？\n\n数据不会清空，但不同通道的联系人 ID 不会按昵称自动合并。\n\nSwitch transport and restart?`,
+  )) return;
+  button.disabled = true;
+  hint.textContent = '正在保存并切换 / Switching...';
+  try {
+    const response = await fetch('/api/transport', {
+      method: 'POST',
+      headers: mutationHeaders(),
+      body: JSON.stringify({ transport: selected, confirm: 'SWITCH_TRANSPORT' }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '切换失败');
+    hint.textContent = 'Bridge 正在重启；请数秒后返回状态页 / Restarting.';
+  } catch (error) {
+    hint.textContent = `切换失败 / Failed: ${error.message}`;
+    button.disabled = false;
+  }
+});
+
+bindSave('transport', 'save-status-transport');
+bindSave('limits', 'save-status-limits');
