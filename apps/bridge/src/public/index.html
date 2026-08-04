@@ -16,257 +16,328 @@
   <div class="ambient-grid" aria-hidden="true"></div>
   <main>
     <header class="topbar">
-      <div class="brand">
-        <p class="eyebrow">FEAGLE WXBOT · LOCAL CONTROL</p>
-        <h1>微信机器人管理台 <span>/ Control Deck</span></h1>
-        <p class="subtitle">连接、健康与消息流 / Connection, health & traffic</p>
+      <div class="clock-card">
+        <strong class="clock" id="clock">--:--:--</strong>
       </div>
+      <img id="brand-logo" class="brand-logo" alt="FEAGLE" src="/assets/icons/feaglew.svg">
       <div class="header-tools">
-        <nav class="page-nav" aria-label="Dashboard navigation">
-          <a class="active" href="/">状态 / Status</a>
-          <a href="/settings.html">设置 / Settings</a>
-        </nav>
-        <button class="icon-button" id="theme-toggle" type="button" aria-label="切换主题">
-          <span id="theme-icon">☾</span>
+        <button class="icon-button theme-toggle" id="theme-toggle" type="button" aria-label="切换主题">
           <span id="theme-label">夜间 / Dark</span>
         </button>
-        <div class="clock-card">
-          <small>本地时间 / LOCAL TIME</small>
-          <strong class="clock" id="clock">--:--:--</strong>
-        </div>
       </div>
     </header>
 
-    <section class="transport-strip" aria-label="消息通道状态">
-      <div>
-        <small>当前消息通道 / ACTIVE TRANSPORT</small>
-        <strong id="transport-name">Wechat4u Web</strong>
-      </div>
-      <p id="transport-detail">正在读取通道状态 / Loading transport state</p>
-      <a class="button blue compact-button" href="/settings.html#transport">切换通道 / Switch</a>
+    <!-- ══════════ 视图 1 · 总览 OVERVIEW ══════════ -->
+    <section class="view active" data-view="overview">
+      <section class="transport-strip" aria-label="消息通道状态">
+        <div>
+          <small>当前消息通道 / ACTIVE TRANSPORT</small>
+          <strong id="transport-name">Wechat4u Web</strong>
+        </div>
+        <p id="transport-detail">正在读取通道状态 / Loading transport state</p>
+      </section>
+
+      <section class="transport-picker" aria-label="消息通道管理">
+        <div class="tp-head">
+          <strong>消息通道</strong><small>MESSAGE TRANSPORT</small>
+        </div>
+        <div class="tp-current">
+          <small>当前消息通道 / ACTIVE</small>
+          <strong id="transport-current">Wechat4u Web</strong>
+        </div>
+        <form id="transport-settings-form" class="tp-options">
+          <label class="transport-card">
+            <input type="radio" name="transport" value="wechat4u" data-setting="transport">
+            <strong>Wechat4u Web</strong>
+            <small>网页协议、Dashboard 二维码、保留现有 Web Session。</small>
+          </label>
+          <label class="transport-card">
+            <input type="radio" name="transport" value="android" data-setting="transport">
+            <strong>Android Hook</strong>
+            <small>Agent 反向 WSS、设备心跳、私聊与白名单群聊。</small>
+          </label>
+        </form>
+        <div class="tp-actions">
+          <button class="button blue" id="switch-transport" type="button">切换通道 / Switch</button>
+          <button class="button secondary" id="save-transport" type="button">保存 / Save</button>
+          <p id="transport-hint">切换不会清空任何持久化数据 / Persistent data is preserved.</p>
+          <p id="save-status-transport">修改只在点击保存后生效 / Changes apply after save.</p>
+        </div>
+      </section>
+
+      <section class="overview-grid">
+        <article class="panel control-panel">
+          <div class="panel-title">
+            <span class="section-number">02</span>
+            <div><strong>服务与控制</strong><small>SERVICES & CONTROL</small></div>
+          </div>
+
+          <div class="service-list">
+            <div class="service" data-key="astrbot">
+              <i></i><b>AstrBot <small>机器人框架 / ENGINE</small></b>
+              <span id="astrbot-status">启动中 / STARTING</span>
+            </div>
+            <p id="astrbot-detail" class="service-detail">等待启动 / Waiting</p>
+
+            <div class="service" data-key="onebot">
+              <i></i><b>OneBot WS <small>协议桥接 / BRIDGE</small></b>
+              <span id="onebot-status">未连接 / DISCONNECTED</span>
+            </div>
+            <p id="onebot-detail" class="service-detail">等待连接 / Waiting</p>
+
+            <div class="service" data-key="notifications">
+              <i></i><b>飞书通知 <small>FEISHU DM</small></b>
+              <span id="notifications-status">未启用 / DISABLED</span>
+            </div>
+            <p id="notifications-detail" class="service-detail">等待配置 / Waiting for config</p>
+
+            <div class="service" data-key="schedule">
+              <i></i><b>定时休眠 <small>SCHEDULE</small></b>
+              <span id="schedule-status">运行中 / ACTIVE</span>
+            </div>
+            <p class="service-detail"><span id="timezone">Asia/Shanghai</span> · <span id="quiet-hours">00:00-07:00</span></p>
+          </div>
+
+          <div class="admin-control">
+            <div class="control-heading">
+              <strong>运行开关 / OPERATION</strong>
+              <small id="admin-mode-hint">正常接收并回复消息 / Processing messages</small>
+            </div>
+            <div class="button-row">
+              <button id="pause-toggle" class="button secondary" type="button">
+                暂停回复 / Pause
+              </button>
+              <button id="manual-offline-toggle" class="button danger" type="button">
+                紧急离线 / Offline
+              </button>
+            </div>
+            <p class="control-note" id="manual-offline-hint">
+              紧急离线会退出微信，并停止自动重连和二维码通知。
+              <span>Logs out WeChat and suppresses auto-heal & QR alerts.</span>
+            </p>
+          </div>
+
+          <details class="toolbox">
+            <summary>测试与维护 / TESTS & MAINTENANCE</summary>
+            <div class="toolbox-grid">
+              <div>
+                <button id="test-mode-toggle" class="button ghost" type="button" aria-pressed="false">
+                  测试模式 / Test mode
+                </button>
+                <p id="test-mode-hint">临时忽略休眠时段 / Bypass quiet hours</p>
+              </div>
+              <div>
+                <button id="notification-test" class="button ghost blue" type="button">
+                  测试飞书 / Test Feishu
+                </button>
+                <p id="notification-test-hint">发送私聊测试通知 / Send a DM test</p>
+              </div>
+              <div class="wide-tool">
+                <button id="force-relogin-test" class="button ghost danger" type="button">
+                  强制重登测试 / Relogin test
+                </button>
+                <p id="force-relogin-hint">
+                  注销 Session，推送一次二维码并反馈结果 / Logout, send one QR and report
+                </p>
+              </div>
+            </div>
+          </details>
+        </article>
+
+        <article class="panel login-panel">
+          <div class="panel-title">
+            <span class="section-number">01</span>
+            <div><strong>微信登录</strong><small>WECHAT LOGIN</small></div>
+            <span class="mode-badge" id="admin-mode-badge">运行中 / RUNNING</span>
+          </div>
+          <div class="login-layout">
+            <div class="qr-shell">
+              <img id="qr" alt="微信登录二维码 / WeChat login QR code">
+              <div id="qr-placeholder" class="qr-placeholder">
+                <span class="pulse"></span>
+                <strong id="wechat-status">启动中 / STARTING</strong>
+                <small id="wechat-detail">正在初始化 / Initializing</small>
+              </div>
+            </div>
+            <div class="login-copy">
+              <div class="identity-row">
+                <div>
+                  <p class="label">微信账号 / ACCOUNT</p>
+                  <p class="value" id="account">--</p>
+                </div>
+                <div>
+                  <p class="label">会话状态 / SESSION</p>
+                  <p class="value value-small" id="session-status">启动中 / STARTING</p>
+                </div>
+              </div>
+              <p class="hint main-hint" id="qr-time">等待协议状态 / Waiting for protocol</p>
+              <div class="protocol-health">
+                <div>
+                  <span>协议同步 / PROTOCOL</span>
+                  <strong id="protocol-health">未知 / UNKNOWN</strong>
+                  <small id="last-sync">上次同步 / LAST --</small>
+                </div>
+                <div>
+                  <span>自动修复 / AUTO-HEAL</span>
+                  <strong id="recovery-attempts">0</strong>
+                  <small id="sync-errors">错误 / ERRORS 0</small>
+                </div>
+              </div>
+              <div class="android-diagnostics" id="android-diagnostics" hidden>
+                <div class="control-heading">
+                  <strong>安卓链路诊断 / ANDROID DIAGNOSTICS</strong>
+                  <small>Bridge → Agent → Hook</small>
+                </div>
+                <dl>
+                  <div><dt>WSS 网关 / Gateway</dt><dd id="android-server">--</dd></div>
+                  <div><dt>设备 / Device</dt><dd id="android-device">--</dd></div>
+                  <div><dt>Hook 通道 / Hook</dt><dd id="android-hook">--</dd></div>
+                  <div><dt>心跳 / Heartbeat</dt><dd id="android-heartbeat">--</dd></div>
+                  <div><dt>待确认命令 / Pending</dt><dd id="android-pending">0</dd></div>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <aside class="metrics" id="metrics" aria-label="消息统计 / Message metrics"></aside>
+      </section>
     </section>
 
-    <section class="status-grid">
-      <article class="panel login-panel">
-        <div class="panel-title">
-          <span class="section-number">01</span>
-          <div><strong>微信登录</strong><small>WECHAT LOGIN</small></div>
-          <span class="mode-badge" id="admin-mode-badge">运行中 / RUNNING</span>
-        </div>
-        <div class="login-layout">
-          <div class="qr-shell">
-            <img id="qr" alt="微信登录二维码 / WeChat login QR code">
-            <div id="qr-placeholder" class="qr-placeholder">
-              <span class="pulse"></span>
-              <strong id="wechat-status">启动中 / STARTING</strong>
-              <small id="wechat-detail">正在初始化 / Initializing</small>
-            </div>
+    <!-- ══════════ 视图 2 · 消息流 TRAFFIC ══════════ -->
+    <section class="view" data-view="traffic">
+      <section class="lower-grid">
+        <article class="panel feed-panel">
+          <div class="panel-title">
+            <div><strong>消息概览</strong></div>
+            <em>VOLATILE · LAST 50</em>
           </div>
-          <div class="login-copy">
-            <div class="identity-row">
-              <div>
-                <p class="label">微信账号 / ACCOUNT</p>
-                <p class="value" id="account">--</p>
-              </div>
-              <div>
-                <p class="label">会话状态 / SESSION</p>
-                <p class="value value-small" id="session-status">启动中 / STARTING</p>
-              </div>
-            </div>
-            <p class="hint main-hint" id="qr-time">等待协议状态 / Waiting for protocol</p>
-            <div class="protocol-health">
-              <div>
-                <span>协议同步 / PROTOCOL</span>
-                <strong id="protocol-health">未知 / UNKNOWN</strong>
-                <small id="last-sync">上次同步 / LAST --</small>
-              </div>
-              <div>
-                <span>自动修复 / AUTO-HEAL</span>
-                <strong id="recovery-attempts">0</strong>
-                <small id="sync-errors">错误 / ERRORS 0</small>
-              </div>
-            </div>
-            <div class="android-diagnostics" id="android-diagnostics" hidden>
-              <div class="control-heading">
-                <strong>安卓链路诊断 / ANDROID DIAGNOSTICS</strong>
-                <small>Bridge → Agent → Hook</small>
-              </div>
-              <dl>
-                <div><dt>WSS 网关 / Gateway</dt><dd id="android-server">--</dd></div>
-                <div><dt>设备 / Device</dt><dd id="android-device">--</dd></div>
-                <div><dt>Hook 通道 / Hook</dt><dd id="android-hook">--</dd></div>
-                <div><dt>心跳 / Heartbeat</dt><dd id="android-heartbeat">--</dd></div>
-                <div><dt>待确认命令 / Pending</dt><dd id="android-pending">0</dd></div>
-              </dl>
-            </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>TIME</th>
+                  <th>DIR</th>
+                  <th>PEER</th>
+                  <th>TEXT</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody id="messages"></tbody>
+            </table>
           </div>
-        </div>
-      </article>
-
-      <article class="panel control-panel">
-        <div class="panel-title">
-          <span class="section-number">02</span>
-          <div><strong>服务与控制</strong><small>SERVICES & CONTROL</small></div>
-        </div>
-
-        <div class="service-list">
-          <div class="service" data-key="astrbot">
-            <i></i><b>AstrBot <small>机器人框架 / ENGINE</small></b>
-            <span id="astrbot-status">启动中 / STARTING</span>
+        </article>
+        <article class="panel feed-panel">
+          <div class="panel-title">
+            <div><strong>事件日志</strong></div>
           </div>
-          <p id="astrbot-detail" class="service-detail">等待启动 / Waiting</p>
-
-          <div class="service" data-key="onebot">
-            <i></i><b>OneBot WS <small>协议桥接 / BRIDGE</small></b>
-            <span id="onebot-status">未连接 / DISCONNECTED</span>
+          <div class="event-log" id="errors">
+            <p><time>--:--:--</time><span>系统 / SYS</span>等待事件 / Waiting for events</p>
           </div>
-          <p id="onebot-detail" class="service-detail">等待连接 / Waiting</p>
-
-          <div class="service" data-key="notifications">
-            <i></i><b>飞书通知 <small>FEISHU DM</small></b>
-            <span id="notifications-status">未启用 / DISABLED</span>
-          </div>
-          <p id="notifications-detail" class="service-detail">等待配置 / Waiting for config</p>
-
-          <div class="service" data-key="schedule">
-            <i></i><b>定时休眠 <small>SCHEDULE</small></b>
-            <span id="schedule-status">运行中 / ACTIVE</span>
-          </div>
-          <p class="service-detail"><span id="timezone">Asia/Shanghai</span> · <span id="quiet-hours">00:00-07:00</span></p>
-        </div>
-
-        <div class="admin-control">
-          <div class="control-heading">
-            <strong>运行开关 / OPERATION</strong>
-            <small id="admin-mode-hint">正常接收并回复消息 / Processing messages</small>
-          </div>
-          <div class="button-row">
-            <button id="pause-toggle" class="button secondary" type="button">
-              暂停回复 / Pause
-            </button>
-            <button id="manual-offline-toggle" class="button danger" type="button">
-              紧急离线 / Offline
-            </button>
-          </div>
-          <p class="control-note" id="manual-offline-hint">
-            紧急离线会退出微信，并停止自动重连和二维码通知。
-            <span>Logs out WeChat and suppresses auto-heal & QR alerts.</span>
-          </p>
-        </div>
-
-        <details class="toolbox">
-          <summary>测试与维护 / TESTS & MAINTENANCE</summary>
-          <div class="toolbox-grid">
-            <div>
-              <button id="test-mode-toggle" class="button ghost" type="button" aria-pressed="false">
-                测试模式 / Test mode
-              </button>
-              <p id="test-mode-hint">临时忽略休眠时段 / Bypass quiet hours</p>
-            </div>
-            <div>
-              <button id="notification-test" class="button ghost blue" type="button">
-                测试飞书 / Test Feishu
-              </button>
-              <p id="notification-test-hint">发送私聊测试通知 / Send a DM test</p>
-            </div>
-            <div class="wide-tool">
-              <button id="force-relogin-test" class="button ghost danger" type="button">
-                强制重登测试 / Relogin test
-              </button>
-              <p id="force-relogin-hint">
-                注销 Session，推送一次二维码并反馈结果 / Logout, send one QR and report
-              </p>
-            </div>
-          </div>
-        </details>
-      </article>
+        </article>
+      </section>
     </section>
 
-    <section class="panel group-panel">
-      <div class="panel-title">
-        <span class="section-number">03</span>
-        <div><strong>群聊安全闸门</strong><small>GROUP CHAT SAFETY GATE</small></div>
-        <span class="mode-badge" id="group-mode-badge">已关闭 / OFF</span>
-      </div>
-      <div class="group-layout">
-        <div class="group-config">
-          <label for="group-mode">处理模式 / MODE</label>
-          <select id="group-mode">
-            <option value="OFF">关闭：完全不处理 / Off</option>
-            <option value="OBSERVE">仅观察：只进面板 / Observe only</option>
-            <option value="MENTION_ONLY">白名单群被 @ 时回复 / Mention only</option>
-          </select>
-          <label for="group-allowlist">允许回复的群 ID / ALLOWLIST IDS</label>
-          <input id="group-allowlist" type="text" inputmode="numeric"
-            placeholder="例如 / e.g. 1000000002, 1000000007">
-          <label for="group-blocked-terms">本地拦截词（每行一个）/ LOCAL BLOCK TERMS</label>
-          <textarea id="group-blocked-terms" rows="3"
-            placeholder="仅保存在服务器 data/control-state.json&#10;One literal term per line"></textarea>
-          <div class="button-row">
-            <button id="group-config-save" class="button blue" type="button">
-              保存群聊设置 / Save
-            </button>
-          </div>
-          <p class="control-note" id="group-config-hint">
-            默认关闭。观察模式不会调用模型；回复模式仍要求白名单与明确 @。
-            <span>Fail-closed: allowlist and explicit @ are both required.</span>
-          </p>
+    <!-- ══════════ 视图 3 · 群聊安全 GROUPS ══════════ -->
+    <section class="view" data-view="groups">
+      <section class="panel group-panel">
+        <div class="panel-title">
+          <span class="section-number">03</span>
+          <div><strong>群聊安全闸门</strong><small>GROUP CHAT SAFETY GATE</small></div>
+          <span class="mode-badge" id="group-mode-badge">已关闭 / OFF</span>
         </div>
-        <div class="group-discovery">
-          <div class="control-heading">
-            <strong>已发现群聊 / DISCOVERED GROUPS</strong>
-            <small>点击添加到输入框 / Click to add</small>
+        <div class="group-layout">
+          <div class="group-config">
+            <label for="group-mode">处理模式 / MODE</label>
+            <select id="group-mode">
+              <option value="OFF">关闭：完全不处理 / Off</option>
+              <option value="OBSERVE">仅观察：只进面板 / Observe only</option>
+              <option value="MENTION_ONLY">白名单群被 @ 时回复 / Mention only</option>
+            </select>
+            <label for="group-allowlist">允许回复的群 ID / ALLOWLIST IDS</label>
+            <input id="group-allowlist" type="text" inputmode="numeric"
+              placeholder="例如 / e.g. 1000000002, 1000000007">
+            <label for="group-blocked-terms">本地拦截词（每行一个）/ LOCAL BLOCK TERMS</label>
+            <textarea id="group-blocked-terms" rows="3"
+              placeholder="仅保存在服务器 data/control-state.json&#10;One literal term per line"></textarea>
+            <div class="button-row">
+              <button id="group-config-save" class="button blue" type="button">
+                保存群聊设置 / Save
+              </button>
+            </div>
+            <p class="control-note" id="group-config-hint">
+              默认关闭。观察模式不会调用模型；回复模式仍要求白名单与明确 @。
+              <span>Fail-closed: allowlist and explicit @ are both required.</span>
+            </p>
           </div>
-          <div id="group-list" class="group-list">
-            <p class="empty-inline">尚未发现群聊 / No groups discovered</p>
-          </div>
-          <p class="fuse-status" id="group-fuse-status">没有群聊熔断 / NO ACTIVE FUSES</p>
-          <div class="group-stats">
-            <span>观察 <b id="group-observed">0</b><small>OBSERVED</small></span>
-            <span>转发 <b id="group-forwarded">0</b><small>FORWARDED</small></span>
-            <span>回复 <b id="group-replied">0</b><small>REPLIED</small></span>
-            <span>拦截 <b id="group-blocked">0</b><small>BLOCKED</small></span>
-            <span>策略 <b id="group-policy-blocked">0</b><small>POLICY</small></span>
-            <span>限流 <b id="group-rate-limited">0</b><small>RATE LIMIT</small></span>
-            <span>熔断 <b id="group-fused">0</b><small>FUSED</small></span>
+          <div class="group-discovery">
+            <div class="control-heading">
+              <strong>已发现群聊 / DISCOVERED GROUPS</strong>
+              <small>点击添加到输入框 / Click to add</small>
+            </div>
+            <div id="group-list" class="group-list">
+              <p class="empty-inline">尚未发现群聊 / No groups discovered</p>
+            </div>
+            <p class="fuse-status" id="group-fuse-status">没有群聊熔断 / NO ACTIVE FUSES</p>
+            <div class="group-stats">
+              <span>观察 <b id="group-observed">0</b><small>OBSERVED</small></span>
+              <span>转发 <b id="group-forwarded">0</b><small>FORWARDED</small></span>
+              <span>回复 <b id="group-replied">0</b><small>REPLIED</small></span>
+              <span>拦截 <b id="group-blocked">0</b><small>BLOCKED</small></span>
+              <span>策略 <b id="group-policy-blocked">0</b><small>POLICY</small></span>
+              <span>限流 <b id="group-rate-limited">0</b><small>RATE LIMIT</small></span>
+              <span>熔断 <b id="group-fused">0</b><small>FUSED</small></span>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     </section>
 
-    <section class="metrics" id="metrics" aria-label="消息统计 / Message metrics"></section>
+    <!-- ══════════ 视图 4 · 设置-流量安全 LIMITS ══════════ -->
+    <section class="view settings-view" data-view="settings-traffic">
+      <aside class="privacy-note">敏感配置不会显示在此页：大模型 API Key 请在 AstrBot WebUI 管理；飞书 Secret 和 Android Token 请继续使用安装向导或服务器环境变量。<br>Secrets are intentionally excluded from Dashboard APIs.</aside>
 
-    <section class="lower-grid">
-      <article class="panel">
-        <div class="panel-title">
-          <span class="section-number">04</span>
-          <div><strong>消息概览</strong><small>MESSAGE FEED</small></div>
-          <em>仅内存 · 最近 50 条 / VOLATILE · LAST 50</em>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>时间<br><small>TIME</small></th>
-                <th>方向<br><small>DIR</small></th>
-                <th>联系人<br><small>PEER</small></th>
-                <th>内容<br><small>TEXT</small></th>
-                <th>状态<br><small>STATUS</small></th>
-              </tr>
-            </thead>
-            <tbody id="messages"></tbody>
-          </table>
-        </div>
-      </article>
-      <article class="panel">
-        <div class="panel-title">
-          <span class="section-number">05</span>
-          <div><strong>事件日志</strong><small>EVENT LOG</small></div>
-        </div>
-        <div class="event-log" id="errors">
-          <p><time>--:--:--</time><span>系统 / SYS</span>等待事件 / Waiting for events</p>
-        </div>
-      </article>
+      <form id="limits-settings-form" class="settings-form">
+        <section class="panel settings-section">
+          <div class="panel-title"><span class="section-number">01</span><div><strong>时间计划</strong><small>SCHEDULE</small></div></div>
+          <div class="section-body field-grid">
+            <div class="field"><label for="quietHours">休眠时段 / QUIET HOURS</label><input id="quietHours" data-setting="quietHours" placeholder="00:00-07:00" required></div>
+            <div class="field"><label for="timezone">时区 / TIMEZONE</label><input id="timezone" data-setting="timezone" placeholder="Asia/Shanghai" required></div>
+          </div>
+        </section>
+
+        <section class="panel settings-section">
+          <div class="panel-title"><span class="section-number">02</span><div><strong>私聊流量保护</strong><small>PRIVATE TRAFFIC</small></div></div>
+          <div class="section-body field-grid">
+            <div class="field"><label>单条最大字符 / MAX CHARS</label><input type="number" data-setting="maxMessageChars" min="100" max="10000"></div>
+            <div class="field"><label>同一用户窗口内上限 / USER LIMIT</label><input type="number" data-setting="userRateLimit" min="1" max="100"></div>
+            <div class="field"><label>用户窗口（秒）/ USER WINDOW</label><input type="number" data-setting="userRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+            <div class="field"><label>全局窗口内上限 / GLOBAL LIMIT</label><input type="number" data-setting="globalRateLimit" min="1" max="1000"></div>
+            <div class="field"><label>全局窗口（秒）/ GLOBAL WINDOW</label><input type="number" data-setting="globalRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+            <div class="field"><label>AstrBot 并发总数 / MAX IN-FLIGHT</label><input type="number" data-setting="maxInFlight" min="1" max="100"></div>
+            <div class="field"><label>单用户并发 / PER USER IN-FLIGHT</label><input type="number" data-setting="maxInFlightPerUser" min="1" max="20"></div>
+          </div>
+        </section>
+
+        <section class="panel settings-section">
+          <div class="panel-title"><span class="section-number">03</span><div><strong>群聊安全</strong><small>GROUP SAFETY</small></div></div>
+          <div class="section-body field-grid">
+            <div class="field"><label>回复冷却（秒）/ COOLDOWN</label><input type="number" data-setting="groupReplyCooldownMs" data-scale="1000" min="0" max="3600"></div>
+            <div class="field"><label>回复最大字符 / REPLY MAX CHARS</label><input type="number" data-setting="groupReplyMaxChars" min="1" max="2000"></div>
+            <div class="field"><label>随机延迟最小（秒）/ JITTER MIN</label><input type="number" data-setting="groupJitterMinMs" data-scale="1000" min="0" max="60" step="0.1"></div>
+            <div class="field"><label>随机延迟最大（秒）/ JITTER MAX</label><input type="number" data-setting="groupJitterMaxMs" data-scale="1000" min="0" max="60" step="0.1"></div>
+            <div class="field"><label>单成员窗口上限 / MEMBER LIMIT</label><input type="number" data-setting="groupMemberRateLimit" min="1" max="100"></div>
+            <div class="field"><label>成员窗口（秒）/ MEMBER WINDOW</label><input type="number" data-setting="groupMemberRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+            <div class="field"><label>单群窗口上限 / GROUP LIMIT</label><input type="number" data-setting="groupRateLimit" min="1" max="1000"></div>
+            <div class="field"><label>群窗口（秒）/ GROUP WINDOW</label><input type="number" data-setting="groupRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+          </div>
+        </section>
+      </form>
+
+      <div class="settings-actions">
+        <p id="save-status-limits">修改只在点击保存后生效 / Changes apply after save.</p>
+        <button class="button blue" id="save-settings-limits" type="button">保存并重启 / Save & restart</button>
+      </div>
     </section>
 
     <footer>
@@ -274,6 +345,23 @@
       <span>仅限本地访问 / LOCAL ACCESS ONLY · 6190</span>
     </footer>
   </main>
+
+  <!-- 底部悬浮胶囊导航 -->
+  <nav class="bottom-nav" aria-label="视图导航 / View navigation">
+    <a class="active" href="#/overview" data-view-link="overview">
+      <span class="nav-ico">◉</span><span class="nav-cn">总览</span><small>OVERVIEW</small>
+    </a>
+    <a href="#/traffic" data-view-link="traffic">
+      <span class="nav-ico">☰</span><span class="nav-cn">消息流</span><small>TRAFFIC</small>
+    </a>
+    <a href="#/groups" data-view-link="groups">
+      <span class="nav-ico">◎</span><span class="nav-cn">群聊</span><small>GROUPS</small>
+    </a>
+    <a href="#/settings-traffic" data-view-link="settings-traffic">
+      <span class="nav-ico">▤</span><span class="nav-cn">流量安全</span><small>LIMITS</small>
+    </a>
+  </nav>
+
   <script src="/app.js"></script>
 </body>
 </html>
