@@ -297,6 +297,7 @@ public final class BridgeForegroundService extends Service {
         put(event, "createTime", data.getLong("create_time", 0));
         put(event, "msgId", data.getLong("msg_id", 0));
         put(event, "msgSvrId", data.getLong("msg_svr_id", 0));
+        put(event, "quoteSvrId", data.getLong("quote_svr_id", 0));
 
         String payload = event.toString();
         recentInboundEvents.put(eventId, Boolean.TRUE);

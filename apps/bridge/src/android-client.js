@@ -176,6 +176,8 @@ export class AndroidWechatClient {
     this.loggedIn = false;
     this.stopping = false;
     this.processingEvents = new Set();
+    // 引用图片缓存：msgSvrId → imageBase64（引用文字到达时组合多模态）
+    this.groupImageCache = new Map();
     this.pendingCommands = new Map();
     this.lastGroupReplyAt = new Map();
     this.groupSendQueues = new Map();
@@ -647,6 +649,32 @@ export class AndroidWechatClient {
     }
   }
 
+  /** 引用图片 LRU 缓存：msgSvrId → imageBase64，5 分钟过期，最多 50 张。 */
+  cacheGroupImage(msgSvrId, imageBase64) {
+    this.groupImageCache.set(msgSvrId, imageBase64);
+    if (this.groupImageCache.size > 50) {
+      const oldest = this.groupImageCache.keys().next().value;
+      this.groupImageCache.delete(oldest);
+    }
+    setTimeout(() => {
+      this.groupImageCache.delete(msgSvrId);
+    }, 5 * 60 * 1000);
+  }
+
+  /** 等待引用图片：图可能还在压缩/传输路上，轮询缓存最多 timeoutMs。 */
+  async waitForGroupImage(quoteSvrId, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const img = this.groupImageCache.get(quoteSvrId) || '';
+      if (img) {
+        this.groupImageCache.delete(quoteSvrId);
+        return img;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return '';
+  }
+
   async handleGroupImage(socket, message) {
     // TODO(2026-08-04): 群聊图片策略未定（MENTION_ONLY 下群图是否响应需产品决策）。
     // 探测阶段 Agent 不会发 group_image。先做最小校验 + 转发，正式实现时
@@ -674,6 +702,12 @@ export class AndroidWechatClient {
     }
     this.processingEvents.add(receiptId);
     try {
+      // 引用图片缓存：msgSvrId → imageBase64（引用文字到达时组合）
+      const msgSvrId = Number(message.msgSvrId || 0);
+      if (msgSvrId > 0) {
+        this.cacheGroupImage(msgSvrId, imageBase64);
+        console.log(`[quote-cache] svrid=${msgSvrId} cached (${imageBase64.length} b64)`);
+      }
       const groupId = this.idMap.entity(
         'group',
         talker,
@@ -830,6 +864,23 @@ export class AndroidWechatClient {
       }
 
       this.state.addMessage({ direction: 'IN', peer, text: content, status: 'GROUP-MENTION' });
+      // 引用图片组合：Agent 带 quoteSvrId（被引用图 msgSvrId）→ 查缓存
+      const quoteSvrId = Number(message.quoteSvrId || 0);
+      let quoteImage = '';
+      if (quoteSvrId > 0) {
+        quoteImage = this.groupImageCache.get(quoteSvrId) || '';
+        if (quoteImage) {
+          this.groupImageCache.delete(quoteSvrId);
+        } else {
+          // 图可能还在压缩/传输路上（文字先到），等待最多 15 秒
+          // （大图/慢传输场景 5 秒可能不够，实测正常 3 秒内到）
+          quoteImage = await this.waitForGroupImage(quoteSvrId, 15_000);
+        }
+        console.log(
+          `[quote] svrid=${quoteSvrId} `
+          + (quoteImage ? `combined (${quoteImage.length} b64)` : 'NO IMAGE (15s)'),
+        );
+      }
       await this.onGroupText({
         groupId,
         groupName,
@@ -840,6 +891,7 @@ export class AndroidWechatClient {
         mentioned: true,
         wechatMessageId: receiptId,
         createTime: normalizeTimestamp(message.createTime),
+        imageBase64: quoteImage || undefined,
       });
       this.idMap.updateMessageReceipt(receiptId, 'FORWARDED');
       this.state.incrementGroup('forwarded');

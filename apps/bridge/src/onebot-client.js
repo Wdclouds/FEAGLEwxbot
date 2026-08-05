@@ -196,6 +196,7 @@ export class OneBotClient {
       this.idMap.updateMessage(messageId, event);
       this.sendEvent(event);
       this.state.increment('forwarded');
+      this.releaseRequest(pendingId);
     } catch (error) {
       this.releaseRequest(pendingId);
       throw error;
@@ -210,6 +211,7 @@ export class OneBotClient {
     nickname,
     text,
     wechatMessageId,
+    imageBase64,
   }) {
     await this.waitForConnection();
     if (this.ws?.readyState !== WebSocket.OPEN) {
@@ -217,6 +219,15 @@ export class OneBotClient {
     }
     const pendingKey = `group:${groupId}`;
     const pendingId = this.reserveRequest(pendingKey);
+    const segments = [{ type: 'at', data: { qq: String(this.selfId) } }];
+    if (typeof imageBase64 === 'string' && imageBase64.length > 0) {
+      // 引用图片 + 文字组合：AstrBot 原生多模态（image + text 同消息）
+      segments.push({
+        type: 'image',
+        data: { file: `base64://${imageBase64}` },
+      });
+    }
+    segments.push({ type: 'text', data: { text } });
     const event = {
       time: Math.floor(Date.now() / 1000),
       self_id: this.selfId,
@@ -226,10 +237,7 @@ export class OneBotClient {
       message_id: 0,
       group_id: Number(groupId),
       user_id: Number(userId),
-      message: [
-        { type: 'at', data: { qq: String(this.selfId) } },
-        { type: 'text', data: { text } },
-      ],
+      message: segments,
       raw_message: `[CQ:at,qq=${this.selfId}] ${text}`,
       font: 0,
       sender: {
@@ -252,6 +260,9 @@ export class OneBotClient {
       this.idMap.updateMessage(messageId, event);
       this.sendEvent(event);
       this.state.increment('forwarded');
+      // agent→AstrBot 是单向消息推送（非 action 请求），发送即完成，
+      // 立即释放 pending 防止高频消息时队列堆积（reserveRequest 满拒发）。
+      this.releaseRequest(pendingId);
     } catch (error) {
       this.releaseRequest(pendingId);
       throw error;
@@ -294,6 +305,7 @@ export class OneBotClient {
       this.idMap.updateMessage(messageId, event);
       this.sendEvent(event);
       this.state.increment('forwarded');
+      this.releaseRequest(pendingId);
     } catch (error) {
       this.releaseRequest(pendingId);
       throw error;
@@ -347,6 +359,7 @@ export class OneBotClient {
       this.idMap.updateMessage(messageId, event);
       this.sendEvent(event);
       this.state.increment('forwarded');
+      this.releaseRequest(pendingId);
     } catch (error) {
       this.releaseRequest(pendingId);
       throw error;

@@ -107,7 +107,8 @@ public final class WechatHook implements IXposedHookLoadPackage {
             long createTime,
             long msgId,
             long msgSvrId,
-            boolean mentioned) {
+            boolean mentioned,
+            long quoteSvrId) {
         String talker = talkerValue == null ? "" : talkerValue.trim();
         String content = contentValue == null ? "" : contentValue;
         if (type != 1 || isSend != 0 || content.isEmpty()) {
@@ -129,7 +130,8 @@ public final class WechatHook implements IXposedHookLoadPackage {
                     createTime,
                     msgId,
                     msgSvrId,
-                    mentioned);
+                    mentioned,
+                    quoteSvrId);
             return;
         }
 
@@ -146,7 +148,8 @@ public final class WechatHook implements IXposedHookLoadPackage {
                 createTime,
                 msgId,
                 msgSvrId,
-                false);
+                false,
+                quoteSvrId);
     }
 
     /**
@@ -159,12 +162,18 @@ public final class WechatHook implements IXposedHookLoadPackage {
             String source,
             String imgPathValue,
             String talker,
+            String contentValue,
             long createTime,
             long msgId,
             long msgSvrId) {
         if (imgPathValue == null || imgPathValue.isEmpty()) {
             return;
         }
+        boolean group = talker != null
+                && talker.toLowerCase(Locale.ROOT).endsWith("@chatroom");
+        // 群图 sender 解析：8.0.70 群图片 content 形如 "发送者wxid:"
+        // （冒号结尾、无换行正文），冒号前即发送者。
+        final String sender = group ? parseImageSender(contentValue) : "";
         String eventId = eventId(
                 talker, "image:" + imgPathValue, createTime, msgId, msgSvrId);
         synchronized (recentEvents) {
@@ -178,12 +187,11 @@ public final class WechatHook implements IXposedHookLoadPackage {
             log("image path parse failed val=" + preview(imgPathValue));
             return;
         }
-        boolean group = talker != null
-                && talker.toLowerCase(Locale.ROOT).endsWith("@chatroom");
         final int messageType = group
                 ? AgentProtocol.MSG_GROUP_IMAGE : AgentProtocol.MSG_PRIVATE_IMAGE;
         log("image captured chat=" + (group ? "group" : "private")
-                + " hash=" + thumbHash + " source=" + source);
+                + " hash=" + thumbHash + " source=" + source
+                + (group ? " sender=" + sender : ""));
         Thread worker = new Thread(() -> {
             try {
                 java.io.File file = resolveThumbFile(thumbHash, 10_000);
@@ -199,7 +207,7 @@ public final class WechatHook implements IXposedHookLoadPackage {
                 String b64 = android.util.Base64.encodeToString(
                         jpeg, android.util.Base64.NO_WRAP);
                 sendImageToAgent(
-                        messageType, eventId, talker, "", b64, "image/jpeg",
+                        messageType, eventId, talker, sender, b64, "image/jpeg",
                         jpeg.length, createTime, msgId, msgSvrId);
                 log("image forwarded type=" + messageType
                         + " bytes=" + jpeg.length + " b64len=" + b64.length());
@@ -209,6 +217,23 @@ public final class WechatHook implements IXposedHookLoadPackage {
         }, "feagle-img");
         worker.setDaemon(true);
         worker.start();
+    }
+
+    /**
+     * 解析群图发送者：8.0.70 群图片消息 content 形如 "发送者wxid:"
+     * （冒号结尾、无换行正文），冒号前即发送者 wxid。
+     */
+    private static String parseImageSender(String contentValue) {
+        if (contentValue == null || contentValue.isEmpty()) {
+            return "";
+        }
+        String normalized = contentValue.replaceAll("(?i)<br\\s*/?>", "\n");
+        int sep = normalized.indexOf(':');
+        if (sep <= 0) {
+            return "";
+        }
+        String sender = normalized.substring(0, sep).trim();
+        return validGroupSender(sender) ? sender : "";
     }
 
     private static String parseThumbHash(String imgPathValue) {
@@ -356,7 +381,8 @@ public final class WechatHook implements IXposedHookLoadPackage {
             long createTime,
             long msgId,
             long msgSvrId,
-            boolean mentioned) {
+            boolean mentioned,
+            long quoteSvrId) {
         synchronized (recentEvents) {
             if (recentEvents.containsKey(eventId)) {
                 return;
@@ -374,6 +400,7 @@ public final class WechatHook implements IXposedHookLoadPackage {
         data.putLong("create_time", createTime);
         data.putLong("msg_id", msgId);
         data.putLong("msg_svr_id", msgSvrId);
+        data.putLong("quote_svr_id", quoteSvrId);
         outbound.setData(data);
         sendToAgent(outbound);
 
