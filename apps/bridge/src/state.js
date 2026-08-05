@@ -28,6 +28,8 @@ export class RuntimeState extends EventEmitter {
       reloginTestStartedAt: '',
       reloginTestCompletedAt: '',
       reloginTestDetail: '',
+      degradedAfterMs: 90_000,
+      fatalAfterMs: 600_000,
     };
     this.transport = {
       active: 'wechat4u',
@@ -45,6 +47,7 @@ export class RuntimeState extends EventEmitter {
       lastHeartbeatAt: '',
       heartbeatAgeMs: null,
       pendingCommands: 0,
+      heartbeatTimeoutMs: 75_000,
     };
     this.astrbot = {
       status: 'STARTING',

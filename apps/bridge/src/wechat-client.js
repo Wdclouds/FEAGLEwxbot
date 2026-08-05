@@ -156,10 +156,16 @@ export class WechatClient {
         qrCreatedAt: '',
         protocolHealth: 'OFFLINE',
         syncAgeMs: null,
+        degradedAfterMs: this.degradedAfterMs,
+        fatalAfterMs: this.fatalAfterMs,
       });
       return;
     }
-    this.state.patch('wechat', { adminMode: this.adminMode });
+    this.state.patch('wechat', {
+      adminMode: this.adminMode,
+      degradedAfterMs: this.degradedAfterMs,
+      fatalAfterMs: this.fatalAfterMs,
+    });
     let session = null;
     if (existsSync(this.sessionPath)) {
       try {

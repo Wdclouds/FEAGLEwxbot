@@ -556,6 +556,11 @@ h1 span {
 .protocol-health strong[data-status="FAILED"],
 .protocol-health strong[data-status="OFFLINE"] { color: var(--red); }
 
+#last-sync[data-status="warn"],
+#android-heartbeat[data-status="warn"] { color: var(--amber); }
+#last-sync[data-status="crit"],
+#android-heartbeat[data-status="crit"] { color: var(--red); }
+
 .android-diagnostics {
   margin-top: 10px;
   padding: 9px;

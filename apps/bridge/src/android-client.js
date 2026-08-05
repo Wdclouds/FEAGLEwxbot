@@ -219,6 +219,7 @@ export class AndroidWechatClient {
       lastHeartbeatAt: '',
       heartbeatAgeMs: null,
       pendingCommands: 0,
+      heartbeatTimeoutMs: this.heartbeatTimeoutMs,
     });
 
     this.server = new WebSocketServer({

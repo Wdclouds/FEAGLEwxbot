@@ -240,18 +240,28 @@ function render(state) {
     $('android-hook').textContent = android.hookConnected
       ? '已连接 / CONNECTED'
       : '未连接 / DISCONNECTED';
-    $('android-heartbeat').textContent = android.lastHeartbeatAt
-      ? `${time(android.lastHeartbeatAt)} · ${Math.round((android.heartbeatAgeMs || 0) / 1000)}s`
+    const hbAge = android.heartbeatAgeMs;
+    const hbTimeout = android.heartbeatTimeoutMs || 75_000;
+    const hbEl = $('android-heartbeat');
+    hbEl.textContent = android.lastHeartbeatAt
+      ? `${time(android.lastHeartbeatAt)} · ${Math.round((hbAge || 0) / 1000)}s / ${Math.round(hbTimeout / 1000)}s`
       : '--';
+    if (hbAge == null) delete hbEl.dataset.status;
+    else hbEl.dataset.status = hbAge >= hbTimeout ? 'crit' : (hbAge >= hbTimeout * 0.6 ? 'warn' : 'ok');
     $('android-pending').textContent = android.pendingCommands || 0;
   }
   $('account').textContent = state.wechat.account || '--';
   $('session-status').textContent = bilingualStatus(state.wechat.status);
   $('protocol-health').textContent = bilingualStatus(state.wechat.protocolHealth || 'UNKNOWN');
   $('protocol-health').dataset.status = state.wechat.protocolHealth || 'UNKNOWN';
-  $('last-sync').textContent = state.wechat.lastSyncAt
-    ? `上次 / LAST ${time(state.wechat.lastSyncAt)} · ${Math.max(0, Math.round((state.wechat.syncAgeMs || 0) / 1000))}s`
+  const syncAge = state.wechat.syncAgeMs;
+  const syncDegraded = state.wechat.degradedAfterMs || 90_000;
+  const lastSyncEl = $('last-sync');
+  lastSyncEl.textContent = state.wechat.lastSyncAt
+    ? `上次 / LAST ${time(state.wechat.lastSyncAt)} · ${Math.max(0, Math.round((syncAge || 0) / 1000))}s`
     : '上次同步 / LAST --';
+  if (syncAge == null) delete lastSyncEl.dataset.status;
+  else lastSyncEl.dataset.status = syncAge >= syncDegraded ? 'crit' : (syncAge >= syncDegraded * 0.6 ? 'warn' : 'ok');
   $('recovery-attempts').textContent = state.wechat.recoveryAttempts || 0;
   $('sync-errors').textContent =
     `错误 / ERRORS ${state.wechat.syncErrors || 0} · 连续 / STREAK ${state.wechat.consecutiveSyncErrors || 0}`;
