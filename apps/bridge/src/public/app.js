@@ -231,9 +231,7 @@ function render(state) {
   const transport = state.transport || { active: 'wechat4u', detail: '' };
   const android = state.android || {};
   const androidActive = transport.active === 'android';
-  $('transport-name').textContent = androidActive ? 'Android Hook' : 'Wechat4u Web';
   $('transport-current').textContent = androidActive ? 'Android Hook' : 'Wechat4u Web';
-  $('transport-detail').textContent = transport.detail || '';
   $('android-diagnostics').hidden = !androidActive;
   if (androidActive) {
     $('android-server').textContent = `${bilingualStatus(android.serverStatus)} · ${android.endpoint || '--'}`;
