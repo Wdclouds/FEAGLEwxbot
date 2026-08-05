@@ -1,12 +1,12 @@
 const $ = (id) => document.getElementById(id);
 
 const metricLabels = {
-  received: '已接收 / RECEIVED',
-  forwarded: '已转发 / FORWARDED',
-  replied: '已回复 / REPLIED',
-  dropped: '已丢弃 / DROPPED',
-  blocked: '已拦截 / BLOCKED',
-  failed: '失败 / FAILED',
+  received: '已接收',
+  forwarded: '已转发',
+  replied: '已回复',
+  dropped: '已丢弃',
+  blocked: '已拦截',
+  failed: '失败',
 };
 
 const statusLabels = {
@@ -119,29 +119,30 @@ function renderAdminMode(state) {
   const badge = $('admin-mode-badge');
   const pauseButton = $('pause-toggle');
   const offlineButton = $('manual-offline-toggle');
+  const offlineHint = $('manual-offline-hint');
   badge.dataset.mode = mode;
   badge.textContent = bilingualStatus(mode);
 
   if (mode === 'MANUAL_OFFLINE') {
     $('admin-mode-hint').textContent = '微信与自动恢复已停止 / WeChat & auto-heal stopped';
     pauseButton.disabled = true;
-    pauseButton.textContent = '暂停回复 / Pause';
-    offlineButton.textContent = '恢复运行 / Resume';
-    $('manual-offline-hint').innerHTML =
+    pauseButton.textContent = '暂停回复';
+    offlineButton.textContent = '恢复运行';
+    if (offlineHint) offlineHint.innerHTML =
       '当前不会自动重连或推送二维码。<span>No reconnect or QR alerts while manually offline.</span>';
   } else if (mode === 'PAUSED') {
     $('admin-mode-hint').textContent = '微信保持在线但不回复 / Connected without replies';
     pauseButton.disabled = false;
-    pauseButton.textContent = '恢复回复 / Resume';
-    offlineButton.textContent = '紧急离线 / Offline';
-    $('manual-offline-hint').innerHTML =
+    pauseButton.textContent = '恢复回复';
+    offlineButton.textContent = '紧急离线';
+    if (offlineHint) offlineHint.innerHTML =
       '消息会被记录为暂停丢弃；连接与心跳仍保持。<span>Messages are dropped; session and heartbeat stay active.</span>';
   } else {
     $('admin-mode-hint').textContent = '正常接收并回复消息 / Processing messages';
     pauseButton.disabled = false;
-    pauseButton.textContent = '暂停回复 / Pause';
-    offlineButton.textContent = '紧急离线 / Offline';
-    $('manual-offline-hint').innerHTML =
+    pauseButton.textContent = '暂停回复';
+    offlineButton.textContent = '紧急离线';
+    if (offlineHint) offlineHint.innerHTML =
       '紧急离线会退出微信，并停止自动重连和二维码通知。<span>Logs out WeChat and suppresses auto-heal & QR alerts.</span>';
   }
 
@@ -288,11 +289,12 @@ function render(state) {
   testButton.dataset.enabled = String(testMode);
   testButton.setAttribute('aria-pressed', String(testMode));
   testButton.textContent = testMode
-    ? '关闭测试模式 / Disable'
-    : '测试模式 / Test mode';
-  $('test-mode-hint').textContent = testMode
-    ? '已忽略休眠时段 / Quiet hours bypassed'
-    : '临时忽略休眠时段 / Bypass quiet hours';
+    ? '关闭测试模式'
+    : '测试模式';
+  const testModeHint = $('test-mode-hint');
+  if (testModeHint) testModeHint.textContent = testMode
+    ? '已忽略休眠时段'
+    : '临时忽略休眠时段';
 
   const reloginStatus = state.wechat.reloginTestStatus || 'IDLE';
   const reloginButton = $('force-relogin-test');
@@ -302,28 +304,29 @@ function render(state) {
     || reloginRunning
     || state.wechat.adminMode !== 'RUNNING';
   reloginButton.textContent = reloginRunning
-    ? '等待重新登录 / Waiting...'
-    : '强制重登测试 / Relogin test';
-  if (androidActive) {
-    reloginHint.textContent = 'Android Hook 不使用 Web 扫码重登测试 / Not used by Android transport';
-  } else if (reloginRunning) {
-    reloginHint.textContent =
-      state.wechat.reloginTestDetail || '二维码将发送到飞书私聊 / QR will be sent once';
-  } else if (reloginStatus === 'SUCCESS') {
-    reloginHint.textContent = `上次成功 / Last success：${state.wechat.reloginTestDetail}`;
-  } else if (reloginStatus === 'FAILED') {
-    reloginHint.textContent = `上次失败 / Last failed：${state.wechat.reloginTestDetail}`;
+    ? '等待重新登录'
+    : '强制重登测试';
+  if (reloginHint) {
+    if (androidActive) {
+      reloginHint.textContent = 'Android Hook 不使用 Web 扫码重登测试';
+    } else if (reloginRunning) {
+      reloginHint.textContent = state.wechat.reloginTestDetail || '二维码将发送到飞书私聊';
+    } else if (reloginStatus === 'SUCCESS') {
+      reloginHint.textContent = `上次成功：${state.wechat.reloginTestDetail}`;
+    } else if (reloginStatus === 'FAILED') {
+      reloginHint.textContent = `上次失败：${state.wechat.reloginTestDetail}`;
+    }
   }
 
   $('metrics').replaceChildren(...Object.entries(state.counters).map(([key, value]) => {
-    const article = document.createElement('article');
-    article.className = 'metric';
-    const small = document.createElement('small');
-    small.textContent = metricLabels[key] || key.toUpperCase();
-    const strong = document.createElement('strong');
-    strong.textContent = value;
-    article.append(small, strong);
-    return article;
+    const row = document.createElement('div');
+    row.className = 'metric-row';
+    const name = document.createElement('span');
+    name.textContent = metricLabels[key] || key.toUpperCase();
+    const num = document.createElement('strong');
+    num.textContent = value;
+    row.append(name, num);
+    return row;
   }));
 
   if (!state.messages.length) {
@@ -486,13 +489,15 @@ async function loadSettings() {
 
 // 保存表单（transport 或 limits 视图）
 function bindSave(formId, statusId) {
-  $(`save-${formId}`).addEventListener('click', async () => {
+  const target = $(`save-${formId}`);
+  if (!target) return; // 容错：按钮 id 不匹配时静默跳过，避免中断整个脚本（2026-08-05 实测 save-limits 缺失导致 initGlassSurface 永远不执行）
+  target.addEventListener('click', async () => {
     const form = $(`${formId}-settings-form`);
     const button = $(`save-${formId}`);
-    const status = $(statusId);
+    const status = $(statusId); // 可能为 null（UI 已删提示元素），容错处理
     if (!form.reportValidity()) return;
     button.disabled = true;
-    status.textContent = '正在校验并保存 / Validating and saving...';
+    if (status) status.textContent = '正在校验并保存 / Validating and saving...';
     try {
       const response = await fetch('/api/settings', {
         method: 'PUT',
@@ -501,9 +506,9 @@ function bindSave(formId, statusId) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || '保存失败');
-      status.textContent = '设置已保存，Bridge 正在重启；数秒后刷新页面 / Restarting, refresh shortly.';
+      if (status) status.textContent = '设置已保存，Bridge 正在重启；数秒后刷新页面 / Restarting, refresh shortly.';
     } catch (error) {
-      status.textContent = `保存失败 / Failed: ${error.message}`;
+      if (status) status.textContent = `保存失败 / Failed: ${error.message}`;
       button.disabled = false;
     }
   });
@@ -535,7 +540,8 @@ $('pause-toggle').addEventListener('click', async () => {
   try {
     await setAdminMode(currentMode === 'PAUSED' ? 'RUNNING' : 'PAUSED');
   } catch (error) {
-    $('manual-offline-hint').textContent = `切换失败 / Failed：${error.message}`;
+    const offlineHint2 = $('manual-offline-hint');
+    if (offlineHint2) offlineHint2.textContent = `切换失败 / Failed：${error.message}`;
   } finally {
     if (button.dataset.mode !== 'MANUAL_OFFLINE') button.disabled = false;
   }
@@ -556,7 +562,8 @@ $('manual-offline-toggle').addEventListener('click', async () => {
   try {
     await setAdminMode(nextMode);
   } catch (error) {
-    $('manual-offline-hint').textContent = `切换失败 / Failed：${error.message}`;
+    const offlineHint2 = $('manual-offline-hint');
+    if (offlineHint2) offlineHint2.textContent = `切换失败 / Failed：${error.message}`;
   } finally {
     button.disabled = false;
   }
@@ -622,7 +629,8 @@ $('test-mode-toggle').addEventListener('click', async () => {
     if (!response.ok) throw new Error(payload.error || '切换失败 / Toggle failed');
     render(payload);
   } catch (error) {
-    $('test-mode-hint').textContent = `切换失败 / Failed：${error.message}`;
+    const testModeHint2 = $('test-mode-hint');
+    if (testModeHint2) testModeHint2.textContent = `切换失败 / Failed：${error.message}`;
   } finally {
     button.disabled = false;
   }
@@ -632,7 +640,7 @@ $('notification-test').addEventListener('click', async () => {
   const button = $('notification-test');
   const hint = $('notification-test-hint');
   button.disabled = true;
-  hint.textContent = '正在发送 / Sending...';
+  if (hint) hint.textContent = '正在发送 / Sending...';
   try {
     const response = await fetch('/api/notifications/test', {
       method: 'POST',
@@ -641,9 +649,9 @@ $('notification-test').addEventListener('click', async () => {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || '发送失败 / Send failed');
     render(payload);
-    hint.textContent = '已发送，请检查飞书 / Sent, check Feishu';
+    if (hint) hint.textContent = '已发送，请检查飞书';
   } catch (error) {
-    hint.textContent = `发送失败 / Failed：${error.message}`;
+    if (hint) hint.textContent = `发送失败 / Failed：${error.message}`;
   } finally {
     button.disabled = false;
   }
@@ -658,7 +666,7 @@ $('force-relogin-test').addEventListener('click', async () => {
   if (!confirmed) return;
 
   button.disabled = true;
-  hint.textContent = '正在注销并生成二维码 / Logging out and generating QR...';
+  if (hint) hint.textContent = '正在注销并生成二维码 / Logging out and generating QR...';
   try {
     const response = await fetch('/api/wechat/force-relogin', {
       method: 'POST',
@@ -708,3 +716,48 @@ $('switch-transport').addEventListener('click', async () => {
 
 bindSave('transport', 'save-status-transport');
 bindSave('limits', 'save-status-limits');
+
+
+/* ── GlassSurface（react-bits 原生版）：底部导航 SVG displacement 玻璃 ── */
+function initGlassSurface() {
+  const el = document.querySelector('.bottom-nav.glass-surface');
+  if (!el || typeof ResizeObserver === 'undefined') return;
+
+  // Chrome 支持 backdrop-filter:url(#filter) 引用 SVG filter；Webkit/Firefox 不支持 → 毛玻璃 fallback
+  const supportsSvgBackdrop = (() => {
+    if ((/Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)) || /Firefox/.test(navigator.userAgent)) return false;
+    const probe = document.createElement('div');
+    probe.style.backdropFilter = 'url(#glass-filter-nav)';
+    return probe.style.backdropFilter !== '';
+  })();
+  el.classList.toggle('glass-surface--svg', supportsSvgBackdrop);
+  el.classList.toggle('glass-surface--fallback', !supportsSvgBackdrop);
+
+  const feImage = document.getElementById('glass-map-nav');
+  if (!feImage) return;
+
+  const updateDisplacementMap = () => {
+    const rect = el.getBoundingClientRect();
+    const w = Math.max(rect.width, 1);
+    const h = Math.max(rect.height, 1);
+    const edge = Math.min(w, h) * 0.035; // borderWidth 0.07 × 0.5
+    const svgContent = [
+      '<svg viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg">',
+      '<defs>',
+      '<linearGradient id="red-grad-nav" x1="100%" y1="0%" x2="0%" y2="0%"><stop offset="0%" stop-color="#0000"/><stop offset="100%" stop-color="red"/></linearGradient>',
+      '<linearGradient id="blue-grad-nav" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#0000"/><stop offset="100%" stop-color="blue"/></linearGradient>',
+      '</defs>',
+      '<rect x="0" y="0" width="' + w + '" height="' + h + '" fill="black"></rect>',
+      '<rect x="0" y="0" width="' + w + '" height="' + h + '" rx="999" fill="url(#red-grad-nav)"/>',
+      '<rect x="0" y="0" width="' + w + '" height="' + h + '" rx="999" fill="url(#blue-grad-nav)" style="mix-blend-mode: difference"/>',
+      '<rect x="' + edge + '" y="' + edge + '" width="' + (w - edge * 2) + '" height="' + (h - edge * 2) + '" rx="999" fill="hsl(0 0% 50% / 0.93)" style="filter:blur(11px)"/>',
+      '</svg>'
+    ].join('');
+    feImage.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(svgContent));
+  };
+
+  updateDisplacementMap();
+  const ro = new ResizeObserver(() => setTimeout(updateDisplacementMap, 0));
+  ro.observe(el);
+}
+initGlassSurface();

@@ -13,7 +13,8 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="ambient-grid" aria-hidden="true"></div>
+  <!-- PixelBlast 背景（three.js shader 像素粒子，2026-08-05 替换原 ambient-grid 网格背景） -->
+  <div id="pixel-blast" class="pixel-blast-container" aria-hidden="true"></div>
   <main>
     <header class="topbar">
       <div class="clock-card">
@@ -29,62 +30,46 @@
 
     <!-- ══════════ 视图 1 · 总览 OVERVIEW ══════════ -->
     <section class="view active" data-view="overview">
-      <section class="transport-picker" aria-label="消息通道管理">
-        <div class="tp-head">
-          <strong>消息通道</strong><small>MESSAGE TRANSPORT</small>
-        </div>
-        <div class="tp-current">
-          <small>当前消息通道 / ACTIVE</small>
-          <strong id="transport-current">Wechat4u Web</strong>
-        </div>
-        <form id="transport-settings-form" class="tp-options">
-          <label class="transport-card">
-            <input type="radio" name="transport" value="wechat4u" data-setting="transport">
-            <strong>Wechat4u Web</strong>
-            <small>网页协议、Dashboard 二维码、保留现有 Web Session。</small>
-          </label>
-          <label class="transport-card">
-            <input type="radio" name="transport" value="android" data-setting="transport">
-            <strong>Android Hook</strong>
-            <small>Agent 反向 WSS、设备心跳、私聊与白名单群聊。</small>
-          </label>
+      <section class="transport-bar" aria-label="消息通道管理">
+        <strong class="tb-title">消息通道</strong>
+        <form id="transport-settings-form" class="segmented" role="radiogroup">
+          <label class="seg"><input type="radio" name="transport" value="wechat4u" data-setting="transport"><span>Wechat4u</span></label>
+          <label class="seg"><input type="radio" name="transport" value="android" data-setting="transport"><span>Android</span></label>
         </form>
-        <div class="tp-actions">
-          <button class="button blue" id="switch-transport" type="button">切换通道 / Switch</button>
-          <button class="button secondary" id="save-transport" type="button">保存 / Save</button>
-          <p id="transport-hint">切换不会清空任何持久化数据 / Persistent data is preserved.</p>
-          <p id="save-status-transport">修改只在点击保存后生效 / Changes apply after save.</p>
-        </div>
+        <span id="transport-current" class="tb-current"></span>
+        <button class="button" id="switch-transport" type="button">切换</button>
+        <button class="button secondary" id="save-transport" type="button">保存</button>
+        <span id="transport-hint" class="tb-hint"></span>
+        <span id="save-status-transport" class="tb-hint"></span>
       </section>
 
       <section class="overview-grid">
         <article class="panel control-panel">
           <div class="panel-title">
-            <span class="section-number">02</span>
-            <div><strong>服务与控制</strong><small>SERVICES & CONTROL</small></div>
+            <div><strong>服务与控制</strong></div>
           </div>
 
           <div class="service-list">
             <div class="service" data-key="astrbot">
-              <i></i><b>AstrBot <small>机器人框架 / ENGINE</small></b>
+              <i></i><b>AstrBot <small>机器人框架</small></b>
               <span id="astrbot-status">启动中 / STARTING</span>
             </div>
             <p id="astrbot-detail" class="service-detail">等待启动 / Waiting</p>
 
             <div class="service" data-key="onebot">
-              <i></i><b>OneBot WS <small>协议桥接 / BRIDGE</small></b>
+              <i></i><b>OneBot WS <small>协议桥接</small></b>
               <span id="onebot-status">未连接 / DISCONNECTED</span>
             </div>
             <p id="onebot-detail" class="service-detail">等待连接 / Waiting</p>
 
             <div class="service" data-key="notifications">
-              <i></i><b>飞书通知 <small>FEISHU DM</small></b>
+              <i></i><b>飞书通知</b>
               <span id="notifications-status">未启用 / DISABLED</span>
             </div>
             <p id="notifications-detail" class="service-detail">等待配置 / Waiting for config</p>
 
             <div class="service" data-key="schedule">
-              <i></i><b>定时休眠 <small>SCHEDULE</small></b>
+              <i></i><b>定时休眠</b>
               <span id="schedule-status">运行中 / ACTIVE</span>
             </div>
             <p class="service-detail"><span id="timezone">Asia/Shanghai</span> · <span id="quiet-hours">00:00-07:00</span></p>
@@ -92,45 +77,36 @@
 
           <div class="admin-control">
             <div class="control-heading">
-              <strong>运行开关 / OPERATION</strong>
+              <strong>运行开关</strong>
               <small id="admin-mode-hint">正常接收并回复消息 / Processing messages</small>
             </div>
             <div class="button-row">
               <button id="pause-toggle" class="button secondary" type="button">
-                暂停回复 / Pause
+                暂停回复
               </button>
-              <button id="manual-offline-toggle" class="button danger" type="button">
-                紧急离线 / Offline
+              <button id="manual-offline-toggle" class="button danger" type="button" title="紧急离线会退出微信，并停止自动重连和二维码通知。Logs out WeChat and suppresses auto-heal & QR alerts.">
+                紧急离线
               </button>
             </div>
-            <p class="control-note" id="manual-offline-hint">
-              紧急离线会退出微信，并停止自动重连和二维码通知。
-              <span>Logs out WeChat and suppresses auto-heal & QR alerts.</span>
-            </p>
           </div>
 
           <details class="toolbox">
-            <summary>测试与维护 / TESTS & MAINTENANCE</summary>
+            <summary>测试与维护</summary>
             <div class="toolbox-grid">
               <div>
-                <button id="test-mode-toggle" class="button ghost" type="button" aria-pressed="false">
-                  测试模式 / Test mode
+                <button id="test-mode-toggle" class="button ghost" type="button" aria-pressed="false" title="临时忽略休眠时段 / Bypass quiet hours">
+                  测试模式
                 </button>
-                <p id="test-mode-hint">临时忽略休眠时段 / Bypass quiet hours</p>
               </div>
               <div>
-                <button id="notification-test" class="button ghost blue" type="button">
-                  测试飞书 / Test Feishu
+                <button id="notification-test" class="button ghost blue" type="button" title="发送私聊测试通知 / Send a DM test">
+                  测试飞书
                 </button>
-                <p id="notification-test-hint">发送私聊测试通知 / Send a DM test</p>
               </div>
               <div class="wide-tool">
-                <button id="force-relogin-test" class="button ghost danger" type="button">
-                  强制重登测试 / Relogin test
+                <button id="force-relogin-test" class="button ghost danger" type="button" title="注销 Session，推送一次二维码并反馈结果 / Logout, send one QR and report">
+                  强制重登测试
                 </button>
-                <p id="force-relogin-hint">
-                  注销 Session，推送一次二维码并反馈结果 / Logout, send one QR and report
-                </p>
               </div>
             </div>
           </details>
@@ -138,54 +114,56 @@
 
         <article class="panel login-panel">
           <div class="panel-title">
-            <span class="section-number">01</span>
-            <div><strong>微信登录</strong><small>WECHAT LOGIN</small></div>
-            <span class="mode-badge" id="admin-mode-badge">运行中 / RUNNING</span>
+            <div><strong>微信登录</strong></div>
+            <span class="mode-badge" id="admin-mode-badge">运行中</span>
           </div>
-          <div class="login-layout">
+          <div class="login-top">
             <div class="qr-shell">
               <img id="qr" alt="微信登录二维码 / WeChat login QR code">
               <div id="qr-placeholder" class="qr-placeholder">
                 <span class="pulse"></span>
-                <strong id="wechat-status">启动中 / STARTING</strong>
-                <small id="wechat-detail">正在初始化 / Initializing</small>
               </div>
             </div>
-            <div class="login-copy">
-              <div class="identity-row">
-                <div>
-                  <p class="label">微信账号 / ACCOUNT</p>
-                  <p class="value" id="account">--</p>
-                </div>
-                <div>
-                  <p class="label">会话状态 / SESSION</p>
-                  <p class="value value-small" id="session-status">启动中 / STARTING</p>
-                </div>
+            <div class="account-status-card">
+              <div class="as-head">账号状态</div>
+              <div class="as-body">
+                <div class="as-row"><span>微信账号</span><b id="account">--</b></div>
+                <div class="as-row"><span>会话状态</span><b id="session-status">启动中 / STARTING</b></div>
+                <div class="as-row"><span>登录状态</span><b id="wechat-status">启动中 / STARTING</b></div>
+                <div class="as-detail" id="wechat-detail">正在初始化 / Initializing</div>
               </div>
-              <p class="hint main-hint" id="qr-time">等待协议状态 / Waiting for protocol</p>
-              <div class="protocol-health">
-                <div>
-                  <span>协议同步 / PROTOCOL</span>
-                  <strong id="protocol-health">未知 / UNKNOWN</strong>
-                  <small id="last-sync">上次同步 / LAST --</small>
-                </div>
-                <div>
-                  <span>自动修复 / AUTO-HEAL</span>
-                  <strong id="recovery-attempts">0</strong>
-                  <small id="sync-errors">错误 / ERRORS 0</small>
-                </div>
+            </div>
+          </div>
+          <div class="diag-grid">
+            <div class="diag-cell">
+              <div class="diag-head">协议同步</div>
+              <div class="diag-body">
+                <div class="ac-row"><span class="d-label">健康</span><strong id="protocol-health">未知 / UNKNOWN</strong></div>
+                <div class="ac-row"><span class="d-label">上次同步</span><small id="last-sync">--</small></div>
+                <div class="ac-row"><span class="d-label">错误</span><small id="sync-errors">0</small></div>
               </div>
-              <div class="android-diagnostics" id="android-diagnostics" hidden>
-                <div class="control-heading">
-                  <strong>安卓链路诊断 / ANDROID DIAGNOSTICS</strong>
-                  <small>Bridge → Agent → Hook</small>
-                </div>
+            </div>
+            <div class="diag-cell">
+              <div class="diag-head">自动修复</div>
+              <div class="diag-body">
+                <div class="ac-row"><span class="d-label">重试次数</span><strong id="recovery-attempts">0</strong></div>
+              </div>
+            </div>
+            <div class="diag-cell">
+              <div class="diag-head">扫码登录</div>
+              <div class="diag-body">
+                <p class="hint" id="qr-time">等待协议状态 / Waiting for protocol</p>
+              </div>
+            </div>
+            <div class="diag-cell android-diagnostics" id="android-diagnostics" hidden>
+              <div class="diag-head">安卓链路诊断</div>
+              <div class="diag-body">
                 <dl>
-                  <div><dt>WSS 网关 / Gateway</dt><dd id="android-server">--</dd></div>
-                  <div><dt>设备 / Device</dt><dd id="android-device">--</dd></div>
-                  <div><dt>Hook 通道 / Hook</dt><dd id="android-hook">--</dd></div>
-                  <div><dt>心跳 / Heartbeat</dt><dd id="android-heartbeat">--</dd></div>
-                  <div><dt>待确认命令 / Pending</dt><dd id="android-pending">0</dd></div>
+                  <div><dt>WSS 网关</dt><dd id="android-server">--</dd></div>
+                  <div><dt>设备</dt><dd id="android-device">--</dd></div>
+                  <div><dt>Hook 通道</dt><dd id="android-hook">--</dd></div>
+                  <div><dt>心跳</dt><dd id="android-heartbeat">--</dd></div>
+                  <div><dt>待确认命令</dt><dd id="android-pending">0</dd></div>
                 </dl>
               </div>
             </div>
@@ -287,48 +265,45 @@
 
     <!-- ══════════ 视图 4 · 设置-流量安全 LIMITS ══════════ -->
     <section class="view settings-view" data-view="settings-traffic">
-      <aside class="privacy-note">敏感配置不会显示在此页：大模型 API Key 请在 AstrBot WebUI 管理；飞书 Secret 和 Android Token 请继续使用安装向导或服务器环境变量。<br>Secrets are intentionally excluded from Dashboard APIs.</aside>
 
       <form id="limits-settings-form" class="settings-form">
-        <section class="panel settings-section">
-          <div class="panel-title"><span class="section-number">01</span><div><strong>时间计划</strong><small>SCHEDULE</small></div></div>
+        <section class="settings-section">
+          <div class="settings-section-title">时间计划</div>
           <div class="section-body field-grid">
-            <div class="field"><label for="quietHours">休眠时段 / QUIET HOURS</label><input id="quietHours" data-setting="quietHours" placeholder="00:00-07:00" required></div>
-            <div class="field"><label for="timezone">时区 / TIMEZONE</label><input id="timezone" data-setting="timezone" placeholder="Asia/Shanghai" required></div>
+            <div class="field"><label for="quietHours">休眠时段</label><input id="quietHours" data-setting="quietHours" placeholder="00:00-07:00" required></div>
           </div>
         </section>
 
-        <section class="panel settings-section">
-          <div class="panel-title"><span class="section-number">02</span><div><strong>私聊流量保护</strong><small>PRIVATE TRAFFIC</small></div></div>
+        <section class="settings-section">
+          <div class="settings-section-title">私聊流量保护</div>
           <div class="section-body field-grid">
-            <div class="field"><label>单条最大字符 / MAX CHARS</label><input type="number" data-setting="maxMessageChars" min="100" max="10000"></div>
-            <div class="field"><label>同一用户窗口内上限 / USER LIMIT</label><input type="number" data-setting="userRateLimit" min="1" max="100"></div>
-            <div class="field"><label>用户窗口（秒）/ USER WINDOW</label><input type="number" data-setting="userRateWindowMs" data-scale="1000" min="1" max="3600"></div>
-            <div class="field"><label>全局窗口内上限 / GLOBAL LIMIT</label><input type="number" data-setting="globalRateLimit" min="1" max="1000"></div>
-            <div class="field"><label>全局窗口（秒）/ GLOBAL WINDOW</label><input type="number" data-setting="globalRateWindowMs" data-scale="1000" min="1" max="3600"></div>
-            <div class="field"><label>AstrBot 并发总数 / MAX IN-FLIGHT</label><input type="number" data-setting="maxInFlight" min="1" max="100"></div>
-            <div class="field"><label>单用户并发 / PER USER IN-FLIGHT</label><input type="number" data-setting="maxInFlightPerUser" min="1" max="20"></div>
+            <div class="field"><label>同一用户窗口上限</label><input type="number" data-setting="userRateLimit" min="1" max="100"></div>
+            <div class="field"><label>用户窗口（秒）</label><input type="number" data-setting="userRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+            <div class="field"><label>全局窗口上限</label><input type="number" data-setting="globalRateLimit" min="1" max="1000"></div>
+            <div class="field"><label>全局窗口（秒）</label><input type="number" data-setting="globalRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+            <div class="field"><label>AstrBot 并发总数</label><input type="number" data-setting="maxInFlight" min="1" max="100"></div>
+            <div class="field"><label>单用户并发</label><input type="number" data-setting="maxInFlightPerUser" min="1" max="20"></div>
           </div>
         </section>
 
-        <section class="panel settings-section">
-          <div class="panel-title"><span class="section-number">03</span><div><strong>群聊安全</strong><small>GROUP SAFETY</small></div></div>
+        <section class="settings-section">
+          <div class="settings-section-title">群聊安全</div>
           <div class="section-body field-grid">
-            <div class="field"><label>回复冷却（秒）/ COOLDOWN</label><input type="number" data-setting="groupReplyCooldownMs" data-scale="1000" min="0" max="3600"></div>
-            <div class="field"><label>回复最大字符 / REPLY MAX CHARS</label><input type="number" data-setting="groupReplyMaxChars" min="1" max="2000"></div>
-            <div class="field"><label>随机延迟最小（秒）/ JITTER MIN</label><input type="number" data-setting="groupJitterMinMs" data-scale="1000" min="0" max="60" step="0.1"></div>
-            <div class="field"><label>随机延迟最大（秒）/ JITTER MAX</label><input type="number" data-setting="groupJitterMaxMs" data-scale="1000" min="0" max="60" step="0.1"></div>
-            <div class="field"><label>单成员窗口上限 / MEMBER LIMIT</label><input type="number" data-setting="groupMemberRateLimit" min="1" max="100"></div>
-            <div class="field"><label>成员窗口（秒）/ MEMBER WINDOW</label><input type="number" data-setting="groupMemberRateWindowMs" data-scale="1000" min="1" max="3600"></div>
-            <div class="field"><label>单群窗口上限 / GROUP LIMIT</label><input type="number" data-setting="groupRateLimit" min="1" max="1000"></div>
-            <div class="field"><label>群窗口（秒）/ GROUP WINDOW</label><input type="number" data-setting="groupRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+            <div class="field"><label>回复冷却（秒）</label><input type="number" data-setting="groupReplyCooldownMs" data-scale="1000" min="0" max="3600"></div>
+            <div class="field"><label>回复最大字符</label><input type="number" data-setting="groupReplyMaxChars" min="1" max="2000"></div>
+            <div class="field range-field"><label>随机延迟（秒）</label><input type="number" data-setting="groupJitterMinMs" data-scale="1000" min="0" max="60" step="0.1" placeholder="1"><span class="range-sep">~</span><input type="number" data-setting="groupJitterMaxMs" data-scale="1000" min="0" max="60" step="0.1" placeholder="3"></div>
+            <div class="field"><label>单成员窗口上限</label><input type="number" data-setting="groupMemberRateLimit" min="1" max="100"></div>
+            <div class="field"><label>成员窗口（秒）</label><input type="number" data-setting="groupMemberRateWindowMs" data-scale="1000" min="1" max="3600"></div>
+            <div class="field"><label>单群窗口上限</label><input type="number" data-setting="groupRateLimit" min="1" max="1000"></div>
+            <div class="field"><label>群窗口（秒）</label><input type="number" data-setting="groupRateWindowMs" data-scale="1000" min="1" max="3600"></div>
           </div>
         </section>
       </form>
 
-      <div class="settings-actions">
-        <p id="save-status-limits">修改只在点击保存后生效 / Changes apply after save.</p>
-        <button class="button blue" id="save-settings-limits" type="button">保存并重启 / Save & restart</button>
+      <!-- 流量监控占位（右侧，待开发） -->
+      <div class="traffic-monitor-placeholder">
+        <span>流量监控：待开发</span>
+        <button class="button blue" id="save-limits" type="button">保存并重启 / Save & restart</button>
       </div>
     </section>
 
@@ -339,21 +314,32 @@
   </main>
 
   <!-- 底部悬浮胶囊导航 -->
-  <nav class="bottom-nav" aria-label="视图导航 / View navigation">
-    <a class="active" href="#/overview" data-view-link="overview">
-      <span class="nav-ico">◉</span><span class="nav-cn">总览</span><small>OVERVIEW</small>
-    </a>
-    <a href="#/traffic" data-view-link="traffic">
-      <span class="nav-ico">☰</span><span class="nav-cn">消息流</span><small>TRAFFIC</small>
-    </a>
-    <a href="#/groups" data-view-link="groups">
-      <span class="nav-ico">◎</span><span class="nav-cn">群聊</span><small>GROUPS</small>
-    </a>
-    <a href="#/settings-traffic" data-view-link="settings-traffic">
-      <span class="nav-ico">▤</span><span class="nav-cn">流量安全</span><small>LIMITS</small>
-    </a>
+  <nav class="bottom-nav glass-surface" aria-label="视图导航 / View navigation">
+    <svg class="glass-surface__filter" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <filter id="glass-filter-nav" colorInterpolationFilters="sRGB" x="0%" y="0%" width="100%" height="100%">
+          <feImage id="glass-map-nav" x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="map" />
+          <feDisplacementMap id="glass-red-channel" in="SourceGraphic" in2="map" scale="-18" xChannelSelector="R" yChannelSelector="G" result="dispRed" />
+          <feColorMatrix in="dispRed" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red" />
+          <feDisplacementMap id="glass-green-channel" in="SourceGraphic" in2="map" scale="-16" xChannelSelector="R" yChannelSelector="G" result="dispGreen" />
+          <feColorMatrix in="dispGreen" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green" />
+          <feDisplacementMap id="glass-blue-channel" in="SourceGraphic" in2="map" scale="-14" xChannelSelector="R" yChannelSelector="G" result="dispBlue" />
+          <feColorMatrix in="dispBlue" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue" />
+          <feBlend in="red" in2="green" mode="screen" result="rg" />
+          <feBlend in="rg" in2="blue" mode="screen" result="output" />
+          <feGaussianBlur in="output" stdDeviation="0.8" />
+        </filter>
+      </defs>
+    </svg>
+    <div class="glass-surface__content">
+      <a class="active" href="#/overview" data-view-link="overview"><span class="nav-cn">总览</span></a>
+      <a href="#/traffic" data-view-link="traffic"><span class="nav-cn">消息流</span></a>
+      <a href="#/groups" data-view-link="groups"><span class="nav-cn">群聊</span></a>
+      <a href="#/settings-traffic" data-view-link="settings-traffic"><span class="nav-cn">流量安全</span></a>
+    </div>
   </nav>
 
-  <script src="/app.js"></script>
+  <script src="/app.js?v=glass20260805"></script>
+  <script src="/pixel-blast.js?v=pb20260805"></script>
 </body>
 </html>

@@ -71,31 +71,26 @@ html { background: var(--bg); }
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 30%),
-    radial-gradient(circle at 95% 80%, color-mix(in srgb, var(--blue) 8%, transparent), transparent 34%),
-    var(--bg);
+  background: var(--bg); /* 纯色底，PixelBlast shader 背景在其上（2026-08-05 去掉径向渐变） */
   color: var(--text);
   font: 14px/1.45 var(--font-sans);
   transition: background-color .2s ease, color .2s ease;
 }
 
-button, input, select, textarea { font: inherit; }
-
-.ambient-grid {
+/* PixelBlast 背景容器（three.js shader 像素粒子） */
+.pixel-blast-container {
   position: fixed;
   inset: 0;
-  pointer-events: none;
-  opacity: .32;
-  background-image:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 42px 42px;
-  mask-image: linear-gradient(to bottom, black, transparent 72%);
+  z-index: 0; /* 0 即可，main 用 z-index:1 压在它上面；负值会被 body 不透明背景盖住（2026-08-05 实测） */
+  overflow: hidden;
+  pointer-events: none; /* 点击涟漪走 document 监听，容器本身不挡交互 */
 }
+
+button, input, select, textarea { font: inherit; }
 
 main {
   position: relative;
+  z-index: 1; /* 压在 PixelBlast 背景（z-index:0）之上 */
   width: min(1280px, calc(100% - 28px));
   margin: 0 auto;
   padding: 20px 0 16px;
@@ -360,9 +355,9 @@ h1 span {
 .status-grid,
 .overview-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.6fr) minmax(150px, .7fr);
-  gap: 12px;
-  align-items: stretch;
+  grid-template-columns: 25% 50% 25%; /* 三栏 25/50/25（2026-08-05 定案） */
+  gap: 16px;
+  align-items: start; /* 顶部对齐，避免散落重叠 */
 }
 
 .lower-grid {
@@ -578,35 +573,89 @@ h1 span {
 .settings-shell { display: grid; gap: 12px; }
 .settings-intro { padding: 14px 16px; }
 .settings-intro p { max-width: 880px; margin: 5px 0 0; color: var(--muted); }
-.settings-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
-.settings-section { padding-bottom: 13px; }
-.settings-section .section-body { padding: 13px; }
-.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.field { display: grid; gap: 5px; }
-.field.full { grid-column: 1 / -1; }
-.field label { color: var(--muted); font: 600 9px var(--font-mono); }
+/* settings-traffic 视图：去卡片化 + 右侧 1/3 表单列（2026-08-05 重构）
+   字段 = label 同行左固定宽 + input 自适应，中文正常字体，紧凑无滚动
+   ⚠️ display:flex 只放 .active：放 .settings-view 上会覆盖 .view{display:none}，导致本视图永远显示压在其他视图下（2026-08-05 实测） */
+.settings-view.active {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 16px;
+}
+.settings-form { width: 290px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+.settings-section { display: flex; flex-direction: column; gap: 8px; padding-bottom: 0; }
+.settings-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  color: var(--text);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line); /* 极简分组：纯文本 + 淡灰下划线 */
+}
+.settings-section .section-body { padding: 0; }
+.field-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.field { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.field.full { grid-column: auto; }
+.field label {
+  flex-shrink: 0;
+  width: 128px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .field input,
 .field select {
-  width: 100%;
-  height: 38px;
-  padding: 0 10px;
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--panel-solid);
   color: var(--text);
 }
 .field input:focus,
 .field select:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+/* 范围字段（随机延迟 1 ~ 3）：label + 两个小框 + ~ 分隔 */
+.range-field input { flex: 0 1 64px; min-width: 0; }
+.range-sep { flex-shrink: 0; color: var(--muted); font-size: 13px; }
 .transport-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .transport-card { position: relative; display: grid; gap: 3px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); cursor: pointer; }
 .transport-card:has(input:checked) { border-color: var(--blue); background: var(--blue-soft); }
 .transport-card input { position: absolute; top: 12px; right: 12px; accent-color: var(--blue); }
 .transport-card strong { color: var(--text); }
 .transport-card small { color: var(--muted); max-width: 90%; }
-.settings-actions { position: sticky; bottom: 10px; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel-solid); box-shadow: var(--shadow); }
+.settings-actions { position: static; width: min(290px, 100%); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0; border: none; border-radius: 0; background: none; box-shadow: none; }
 .settings-actions p { margin: 0; color: var(--muted); font-size: 10px; }
 .settings-actions .button { min-width: 190px; }
-.privacy-note { padding: 11px 13px; border-left: 3px solid var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); color: var(--muted); font-size: 10px; }
+/* 流量监控占位（右侧，待开发）：蓝色边框 + 居中文字 + 保存按钮右下角 */
+.traffic-monitor-placeholder {
+  flex: 1;
+  min-width: 0;
+  margin-top: 12px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--blue);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--blue) 4%, transparent);
+}
+.traffic-monitor-placeholder span {
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: .12em;
+}
+.traffic-monitor-placeholder .button {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+}
+.privacy-note { width: min(290px, 100%); box-sizing: border-box; padding: 11px 13px; border-left: 3px solid var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); color: var(--muted); font-size: 10px; }
 
 .control-panel { display: flex; flex-direction: column; }
 .service-list { padding: 8px 12px 2px; }
@@ -821,38 +870,152 @@ h1 span {
 .group-stats b { display: block; color: var(--accent); font: 650 17px var(--font-mono); }
 .group-stats small { display: block; color: var(--subtle); font: 500 7px var(--font-mono); }
 
+/* 总览页视觉减法（2026-08-05）：去卡片化——overview-grid 内 panel 去外框/背景/阴影，空白划分 */
+/* ── 第二阶段布局收拢（2026-08-05）── */
+
+/* 顶部通道选择器压缩为紧凑顶条 + Segmented Control */
+.transport-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.transport-bar .tb-title { font-size: 12px; font-weight: 600; letter-spacing: .08em; color: var(--muted); }
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.seg { position: relative; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span {
+  display: block;
+  padding: 4px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease;
+}
+.seg input:checked + span { color: var(--blue); background: var(--blue-soft); font-weight: 600; }
+.transport-bar .tb-current { font: 600 11px var(--font-mono); color: var(--blue); }
+.transport-bar .tb-hint { font-size: 10px; color: var(--subtle); margin-left: auto; }
+.transport-bar .button { min-height: 28px; padding: 4px 12px; font-size: 11px; color: var(--blue); border-color: color-mix(in srgb, var(--blue) 45%, transparent); background: var(--blue-soft); }
+.transport-bar .button.secondary { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 30%, transparent); background: transparent; }
+
+/* 中栏：登录区（QR + 账号状态卡，横向对齐左栏运行开关行） */
+.login-top { display: flex; align-items: stretch; gap: 12px; padding: 0 0 14px; }
+.qr-shell {
+  flex-shrink: 0;
+  width: 120px;
+  aspect-ratio: 1;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f4fffb;
+  box-shadow: 0 0 20px color-mix(in srgb, var(--blue) 10%, transparent);
+}
+.login-top .main-hint { margin: 0; text-align: center; }
+
+/* 账号状态卡（独立于诊断网格，缩小版状态显示） */
+.account-status-card {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-solid) 55%, transparent);
+  display: flex;
+  flex-direction: column;
+}
+.as-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  color: var(--text);
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.as-body { display: flex; flex-direction: column; gap: 5px; flex: 1; justify-content: center; }
+.as-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.as-row span { color: var(--muted); font-size: 11px; }
+.as-row b { color: var(--text); font-size: 12px; font-weight: 600; }
+.as-detail { margin-top: 4px; color: var(--subtle); font-size: 10px; text-align: right; }
+
+/* 中栏：2x2 诊断网格（极淡半透明容器） */
+.diag-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.diag-cell {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-solid) 55%, transparent);
+}
+.diag-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  color: var(--text);
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.diag-body { display: flex; flex-direction: column; gap: 5px; }
+.ac-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ac-row .d-label { color: var(--muted); font-size: 11px; }
+.ac-row .value, .ac-row strong { color: var(--text); font-size: 12px; }
+.ac-row small { color: var(--subtle); font-size: 11px; }
+.diag-body dl { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.diag-body dl div { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.diag-body dt { color: var(--muted); }
+.diag-body dd { margin: 0; color: var(--text); font-family: var(--font-mono); font-size: 11px; }
+.overview-grid .panel {
+  border: none;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+.overview-grid .panel-title {
+  min-height: 34px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 10px;
+}
+.overview-grid .panel-title div { gap: 2px; }
+
 .metrics {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 0;
   margin: 0;
   align-content: start;
+  width: 230px; /* 6 个指标项收窄（2026-08-05 用户要求减 50-100px） */
 }
 
-.metric {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 1fr auto;
+/* 拍平数据列表：无边框、淡线分隔，右侧数据统一靠右对齐（2026-08-05 第三阶段） */
+.metric-row {
+  display: flex;
   align-items: baseline;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
-  padding: 10px 12px;
-  box-shadow: 0 7px 20px rgba(0, 0, 0, .06);
+  justify-content: flex-end; /* 整体靠右，名称紧跟数值 */
+  gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
 }
+.metric-row:last-child { border-bottom: none; }
+.metric-row span { color: var(--muted); font-size: 12px; }
+.metric-row strong { color: var(--text); font: 700 18px var(--font-mono); }
 
-.metric small {
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 1.15;
-}
-
-.metric strong {
-  display: block;
-  color: var(--accent);
-  font: 650 22px/1.1 var(--font-mono);
-}
+/* 按钮统一尺寸（2026-08-05 视觉减法）：34px 统一高度，ghost 不再单独缩 */
+.button.ghost { min-height: 34px; font-size: 11px; }
 
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -897,67 +1060,144 @@ footer {
   margin-top: 9px;
 }
 
-/* ── 底部悬浮胶囊导航 ── */
+/* ── 底部悬浮胶囊导航（GlassSurface 玻璃，2026-08-05）── */
+.bottom-nav.glass-surface {
+  position: fixed; /* 合并选择器压过 .glass-surface 的 relative（后定义同特异性会覆盖） */
+}
+
 .bottom-nav {
   position: fixed;
   left: 50%;
   bottom: 18px;
   transform: translateX(-50%);
   z-index: 50;
+  border-radius: 999px;
+}
+
+.bottom-nav .glass-surface__content {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
-  box-shadow: var(--shadow), inset 0 1px rgba(255, 255, 255, .04);
-  backdrop-filter: blur(10px);
+  width: auto;   /* 覆盖通用类的 100%：fixed 定位下会把胶囊撑成视口宽 */
+  height: auto;
+}
+
+/* ── GlassSurface（react-bits 玻璃表面，原生版，2026-08-05）── */
+.glass-surface {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: opacity 0.26s ease-out;
+}
+
+.glass-surface__filter {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  z-index: -1;
+}
+
+.glass-surface__content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border-radius: inherit;
+  position: relative;
+  z-index: 1;
+}
+
+/* SVG 滤镜玻璃（Chrome 支持 backdrop-filter:url() 引用 SVG filter）——默认 dark
+   主题适配（2026-08-05 用户指令）：夜间=暗色底+极淡白边+深色弥散影；白天=白半透明底+极淡黑边+微弱外影 */
+.glass-surface--svg {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: url(#glass-filter-nav) saturate(1);
+}
+
+[data-theme="light"] .glass-surface--svg {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* 毛玻璃 fallback（Webkit / Firefox 不支持 backdrop-filter 引用 SVG url()）——默认 dark，同主题适配 */
+.glass-surface--fallback {
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(12px) saturate(1.8) brightness(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.8) brightness(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="light"] .glass-surface--fallback {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px) saturate(1.8) brightness(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.8) brightness(1.1);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+@supports not (backdrop-filter: blur(10px)) {
+  .glass-surface--fallback {
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .glass-surface--fallback::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: inherit;
+    z-index: -1;
+  }
+  [data-theme="light"] .glass-surface--fallback {
+    background: rgba(255, 255, 255, 0.4);
+  }
+  [data-theme="light"] .glass-surface--fallback::before {
+    background: rgba(255, 255, 255, 0.15);
+  }
 }
 
 .bottom-nav a {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: 1fr auto;
+  display: flex;
   align-items: center;
-  column-gap: 7px;
+  justify-content: center;
   min-width: 96px;
-  padding: 8px 14px;
+  padding: 10px 18px;
   border-radius: 999px;
   color: var(--muted);
   text-decoration: none;
   transition: color .2s ease, background .2s ease, transform .15s ease;
 }
 
-.bottom-nav a:hover { color: var(--text); background: var(--accent-soft); }
+/* hover/active 纯文字变色，零背景（2026-08-05 用户要求去掉蓝色背景块，保持胶囊轻盈） */
+.bottom-nav a:hover {
+  color: var(--accent);
+  background: transparent;
+}
 
 .bottom-nav a:active { transform: scale(.96); }
 
 .bottom-nav a.active {
   color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.bottom-nav .nav-ico {
-  grid-row: 1 / 3;
-  font-size: 15px;
-  line-height: 1;
+  background: transparent;
 }
 
 .bottom-nav .nav-cn {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .02em;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  line-height: 1;
 }
-
-.bottom-nav small {
-  color: var(--subtle);
-  font: 600 7px var(--font-mono);
-  letter-spacing: .1em;
-}
-
-.bottom-nav a.active small { color: color-mix(in srgb, var(--accent) 75%, var(--subtle)); }
 
 @media (max-width: 980px) {
   .status-grid, .lower-grid, .overview-grid { grid-template-columns: 1fr; }
@@ -977,6 +1217,8 @@ footer {
   .icon-button:not(.theme-toggle) { min-height: 42px; padding: 0 11px; }
   h1 span { display: block; margin-top: 4px; }
   .login-layout { grid-template-columns: 1fr; }
+  .login-top { flex-direction: column; align-items: center; }
+  .account-status-card { width: 100%; }
   .qr-shell { width: min(188px, 100%); margin: auto; }
   .metrics { grid-template-columns: repeat(2, 1fr); }
   .group-list { grid-template-columns: 1fr; }
