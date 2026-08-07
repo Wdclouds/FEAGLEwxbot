@@ -824,7 +824,9 @@ export class AndroidWechatClient {
         return;
       }
 
-      const allowed = this.groupAllowlist.has(String(groupId));
+      // 回复授权：白名单 或 显式逐群设为 MENTION_ONLY（用户给该群设「艾特回复」= 已授权）
+      const allowed = this.groupAllowlist.has(String(groupId))
+        || this.groupModes[String(groupId)] === GROUP_CHAT_MODES.MENTION_ONLY;
       if (!allowed || message.mentioned !== true) {
         this.idMap.updateMessageReceipt(receiptId, 'DROPPED');
         this.state.increment('dropped');
@@ -1032,7 +1034,10 @@ export class AndroidWechatClient {
     if (this.groupModeFor(groupId) !== GROUP_CHAT_MODES.MENTION_ONLY) {
       throw new Error('该群未启用回复模式');
     }
-    if (!this.groupAllowlist.has(groupId)) throw new Error('该群不在回复白名单中');
+    // 回复授权：白名单 或 显式逐群 MENTION_ONLY（与 handleGroupText 一致）
+    const replyAllowed = this.groupAllowlist.has(groupId)
+      || this.groupModes[String(groupId)] === GROUP_CHAT_MODES.MENTION_ONLY;
+    if (!replyAllowed) throw new Error('该群不在回复白名单中');
 
     const content = String(text || '');
     if (!content || Array.from(content).length > this.groupReplyMaxChars) {
