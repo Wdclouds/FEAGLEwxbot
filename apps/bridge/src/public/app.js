@@ -141,13 +141,13 @@ function renderAdminMode(state) {
     pauseButton.disabled = true;
     pauseButton.textContent = '解除时限';
   } else if (mode === 'PAUSED') {
-    $('admin-mode-hint').textContent = '微信保持在线但不回复 / Connected without replies';
+    $('admin-mode-hint').textContent = '时限中：只接收不回复 / Time limit: receive only';
     pauseButton.disabled = false;
-    pauseButton.textContent = '恢复时限';
+    pauseButton.textContent = '解除时限';
   } else {
     $('admin-mode-hint').textContent = '正常接收并回复消息 / Processing messages';
     pauseButton.disabled = false;
-    pauseButton.textContent = '解除时限';
+    pauseButton.textContent = '恢复时限';
   }
 
   pauseButton.dataset.mode = mode;
@@ -181,12 +181,17 @@ function renderGroupChat(state) {
     const fuse = fuseByGroup.get(gid);
     const mode = group.mode || 'MENTION_ONLY';
     const sleeping = ((state.schedule || {}).mode) === 'SLEEPING';
+    const paused = (state.wechat.adminMode || 'RUNNING') === 'PAUSED';
+    // 时限 = 休眠时段 + 手动暂停（PAUSED）：两者 bot 实际都只收不回复
+    // 实时状态优先级：熔断(灰) > 时限(绿灯降级为黄) > 手动配置色
+    const timeLimited = sleeping || paused;
     const button = document.createElement('button');
     button.className = fuse ? 'group-chip fused' : 'group-chip';
     button.type = 'button';
     button.dataset.groupId = gid;
-    if (sleeping && !fuse) {
-      button.title = '休眠中，仅接收不回复 / Sleeping, receive only';
+    // 时限内仅绿灯（艾特回复）降级为黄灯，红/黄灯是手动设置不受影响
+    if (timeLimited && !fuse && mode === 'MENTION_ONLY') {
+      button.title = '时限中：仅接收不回复，恢复需先解除时限 / Time limit: receive only';
     }
 
     // 群头像占位框（方形色块 + 群名首字，后续换真实头像；双击展开/收起 ID + members）
@@ -204,9 +209,10 @@ function renderGroupChat(state) {
     meta.textContent = `ID ${gid} · ${group.memberCount || 0} members`;
     body.append(name, meta);
 
-    // 红绿灯 = 实时状态：熔断(灰) > 休眠(黄=仅接收不回复) > 配置模式
-    // 休眠期 bot 实际只收不回复（SLEEP-DROP），即使配置是艾特回复也变黄
-    const displayMode = sleeping && !fuse ? 'OBSERVE' : mode;
+    // 红绿灯 = 实时状态：熔断(灰) > 时限(仅绿灯降级为黄) > 配置模式
+    // 时限内 bot 实际只收不回复（SLEEP-DROP / PAUSED），艾特回复的群显示黄灯；
+    // 手动设置的红/黄灯不受时限影响，保持原色
+    const displayMode = !fuse && timeLimited && mode === 'MENTION_ONLY' ? 'OBSERVE' : mode;
     const lights = document.createElement('span');
     lights.className = 'traffic-lights';
     lights.dataset.mode = displayMode;
@@ -236,14 +242,14 @@ function renderGroupChat(state) {
       button.append(progress);
     }
 
-    // 点击条目（非头像区域）→ 弹窗切换接收模式
-    button.addEventListener('click', () => openGroupStatusModal(gid, group.name, mode));
+    // 点击条目（非头像区域）→ 弹窗切换接收模式（传显示态，所见即所得）
+    button.addEventListener('click', () => openGroupStatusModal(gid, group.name, displayMode, timeLimited));
     // 头像：单击 = 弹窗（250ms 防抖，避免双击误触）；双击 = 展开/收起 ID + members
     let avatarClickTimer = null;
     avatar.addEventListener('click', (event) => {
       event.stopPropagation();
       clearTimeout(avatarClickTimer);
-      avatarClickTimer = setTimeout(() => openGroupStatusModal(gid, group.name, mode), 250);
+      avatarClickTimer = setTimeout(() => openGroupStatusModal(gid, group.name, displayMode, timeLimited), 250);
     });
     avatar.addEventListener('dblclick', (event) => {
       event.stopPropagation();
@@ -636,10 +642,14 @@ const MODE_LABELS = { MENTION_ONLY: '艾特回复', OBSERVE: '仅接收不回复
 const statusModal = $('group-status-modal');
 let pendingGroupId = null;
 let pendingGroupMode = null;
+let pendingTimeLimited = false;
 
-function openGroupStatusModal(groupId, name, current) {
+function openGroupStatusModal(groupId, name, current, timeLimited) {
   pendingGroupId = groupId;
   pendingGroupMode = current;
+  pendingTimeLimited = Boolean(timeLimited);
+  const tip = $('group-status-modal-tip');
+  if (tip) tip.hidden = true;
   $('group-status-modal-group').textContent =
     `${name}（当前：${MODE_LABELS[current] || current}）`;
   document.querySelectorAll('.modal-option').forEach((opt) => {
@@ -652,6 +662,7 @@ function closeGroupStatusModal() {
   statusModal.hidden = true;
   pendingGroupId = null;
   pendingGroupMode = null;
+  pendingTimeLimited = false;
 }
 
 $('group-status-modal-cancel').addEventListener('click', closeGroupStatusModal);
@@ -669,6 +680,12 @@ $('group-status-modal-confirm').addEventListener('click', async () => {
   const gid = pendingGroupId;
   const target = pendingGroupMode;
   if (!gid || !target) return closeGroupStatusModal();
+  // 时限内禁止手动开启艾特回复：制止操作并引导去「解除时限」按钮
+  if (pendingTimeLimited && target === 'MENTION_ONLY') {
+    const tip = $('group-status-modal-tip');
+    if (tip) tip.hidden = false;
+    return;
+  }
   const button = $('group-status-modal-confirm');
   button.disabled = true;
   try {
@@ -689,6 +706,12 @@ $('group-status-modal-confirm').addEventListener('click', async () => {
   } finally {
     button.disabled = false;
   }
+});
+
+// 时限内被制止时的引导按钮：跳到流量安全页找「解除时限」
+$('group-status-modal-goto').addEventListener('click', () => {
+  closeGroupStatusModal();
+  window.location.hash = '#/settings-traffic';
 });
 
 // 设置页事件

@@ -1056,6 +1056,27 @@ h1 span {
   color: var(--blue);
   font-weight: 650;
 }
+/* 时限内制止切换的引导提示（2026-08-08） */
+.modal-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, #ef4444 45%, transparent);
+  background: color-mix(in srgb, #ef4444 8%, transparent);
+  color: #ef4444;
+  font-size: 11px;
+}
+.modal-tip[hidden] { display: none; }
+.modal-tip .modal-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #ef4444;
+  border-color: color-mix(in srgb, #ef4444 45%, transparent);
+  flex-shrink: 0;
+}
 
 /* 总览页视觉减法（2026-08-05）：去卡片化——overview-grid 内 panel 去外框/背景/阴影，空白划分 */
 /* ── 第二阶段布局收拢（2026-08-05）── */
