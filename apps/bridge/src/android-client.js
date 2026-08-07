@@ -105,6 +105,7 @@ export class AndroidWechatClient {
     initialGroupChatMode = GROUP_CHAT_MODES.OFF,
     initialGroupAllowlist = [],
     initialGroupBlockedTerms = [],
+    initialGroupModes = {},
     groupSafety = null,
     groupReplyCooldownMs = positiveInteger(
       process.env.BOT_GROUP_REPLY_COOLDOWN_MS,
@@ -152,6 +153,10 @@ export class AndroidWechatClient {
     this.adminMode = initialAdminMode;
     this.groupChatMode = normalizeGroupChatMode(initialGroupChatMode);
     this.groupAllowlist = new Set(normalizeGroupAllowlist(initialGroupAllowlist));
+    this.groupModes = {};
+    for (const [groupId, mode] of Object.entries(initialGroupModes || {})) {
+      this.groupModes[String(groupId)] = normalizeGroupChatMode(mode);
+    }
     this.groupSafety = groupSafety;
     this.groupSafety?.setBlockedTerms(initialGroupBlockedTerms);
     this.groupReplyCooldownMs = groupReplyCooldownMs;
@@ -745,6 +750,18 @@ export class AndroidWechatClient {
     }
   }
 
+  /** 逐群接收模式：groupModes[gid] 优先，缺省跟随全局 mode */
+  groupModeFor(groupId) {
+    return this.groupModes[String(groupId)] || this.groupChatMode;
+  }
+
+  /** 更新单个群的接收模式（Dashboard /api/group-chat/status 调用） */
+  setGroupMode(groupId, mode) {
+    const gid = String(groupId || '');
+    if (!gid) return;
+    this.groupModes[gid] = normalizeGroupChatMode(mode);
+  }
+
   async handleGroupText(socket, message) {
     const eventId = String(message.eventId || '').trim();
     const talker = String(message.talker || '').trim();
@@ -784,7 +801,8 @@ export class AndroidWechatClient {
 
     let guard;
     try {
-      if (this.groupChatMode === GROUP_CHAT_MODES.OFF) {
+      const groupMode = this.groupModeFor(groupId);
+      if (groupMode === GROUP_CHAT_MODES.OFF) {
         this.idMap.updateMessageReceipt(receiptId, 'DROPPED');
         this.state.increment('dropped');
         this.state.incrementGroup('blocked');
@@ -794,7 +812,7 @@ export class AndroidWechatClient {
       }
 
       this.state.incrementGroup('observed');
-      if (this.groupChatMode === GROUP_CHAT_MODES.OBSERVE) {
+      if (groupMode === GROUP_CHAT_MODES.OBSERVE) {
         this.idMap.updateMessageReceipt(receiptId, 'DROPPED');
         this.state.addMessage({
           direction: 'IN',
@@ -1011,8 +1029,8 @@ export class AndroidWechatClient {
       throw new Error('管理员已暂停机器人回复');
     }
     if (this.isSleeping()) throw new Error('机器人处于定时休眠时段');
-    if (this.groupChatMode !== GROUP_CHAT_MODES.MENTION_ONLY) {
-      throw new Error('群聊回复模式未启用');
+    if (this.groupModeFor(groupId) !== GROUP_CHAT_MODES.MENTION_ONLY) {
+      throw new Error('该群未启用回复模式');
     }
     if (!this.groupAllowlist.has(groupId)) throw new Error('该群不在回复白名单中');
 

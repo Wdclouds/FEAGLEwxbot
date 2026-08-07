@@ -135,6 +135,7 @@ const dashboard = new DashboardServer({
   setGroupChatMode: async (groupId, mode) => {
     controlStore.saveGroupMode(groupId, mode);
     state.setGroupMode(groupId, mode);
+    wechat?.setGroupMode?.(groupId, mode);
     return state.snapshot();
   },
   getBridgeSettings: () => settingsStore.snapshot(),
@@ -224,6 +225,7 @@ const commonWechatOptions = {
   initialGroupChatMode: savedControl.groupChatMode,
   initialGroupAllowlist: savedControl.groupAllowlist,
   initialGroupBlockedTerms: savedControl.groupBlockedTerms,
+  initialGroupModes: savedControl.groupModes,
   groupSafety,
   groupReplyCooldownMs: settings.groupReplyCooldownMs,
   groupReplyMaxChars: settings.groupReplyMaxChars,
