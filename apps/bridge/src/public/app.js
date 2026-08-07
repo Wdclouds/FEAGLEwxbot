@@ -180,10 +180,14 @@ function renderGroupChat(state) {
     const gid = String(group.groupId);
     const fuse = fuseByGroup.get(gid);
     const mode = group.mode || 'MENTION_ONLY';
+    const sleeping = ((state.schedule || {}).mode) === 'SLEEPING';
     const button = document.createElement('button');
     button.className = fuse ? 'group-chip fused' : 'group-chip';
     button.type = 'button';
     button.dataset.groupId = gid;
+    if (sleeping && !fuse) {
+      button.title = '休眠中，仅接收不回复 / Sleeping, receive only';
+    }
 
     // 群头像占位框（方形色块 + 群名首字，后续换真实头像；双击展开/收起 ID + members）
     const avatar = document.createElement('span');
@@ -200,10 +204,12 @@ function renderGroupChat(state) {
     meta.textContent = `ID ${gid} · ${group.memberCount || 0} members`;
     body.append(name, meta);
 
-    // 红绿灯：绿(艾特回复) / 黄(仅接收不回复) / 红(不接收)，当前模式点亮
+    // 红绿灯 = 实时状态：熔断(灰) > 休眠(黄=仅接收不回复) > 配置模式
+    // 休眠期 bot 实际只收不回复（SLEEP-DROP），即使配置是艾特回复也变黄
+    const displayMode = sleeping && !fuse ? 'OBSERVE' : mode;
     const lights = document.createElement('span');
     lights.className = 'traffic-lights';
-    lights.dataset.mode = mode;
+    lights.dataset.mode = displayMode;
     for (const [m, cls, title] of [
       ['OFF', 'red', '不接收 / IGNORE'],
       ['OBSERVE', 'amber', '仅接收不回复 / RECEIVE ONLY'],
