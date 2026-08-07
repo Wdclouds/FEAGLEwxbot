@@ -150,37 +150,12 @@ function renderAdminMode(state) {
   offlineButton.dataset.mode = mode;
 }
 
-function allowlistFromInput() {
-  return Array.from(new Set($('group-allowlist').value
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => /^\d+$/.test(item))));
-}
-
-function blockedTermsFromInput() {
-  return Array.from(new Set($('group-blocked-terms').value
-    .split(/\r?\n/)
-    .map((item) => item.trim().toLocaleLowerCase())
-    .filter(Boolean)))
-    .slice(0, 100);
-}
-
 function renderGroupChat(state) {
   const groupChat = state.groupChat || {
     mode: 'OFF',
     allowlist: [],
     discovered: [],
   };
-  const badge = $('group-mode-badge');
-  badge.dataset.mode = groupChat.mode;
-  badge.textContent = bilingualStatus(groupChat.mode);
-  if (document.activeElement !== $('group-mode')) $('group-mode').value = groupChat.mode;
-  if (document.activeElement !== $('group-allowlist')) {
-    $('group-allowlist').value = (groupChat.allowlist || []).join(', ');
-  }
-  if (document.activeElement !== $('group-blocked-terms')) {
-    $('group-blocked-terms').value = (groupChat.blockedTerms || []).join('\n');
-  }
   $('group-observed').textContent = groupChat.observed || 0;
   $('group-forwarded').textContent = groupChat.forwarded || 0;
   $('group-replied').textContent = groupChat.replied || 0;
@@ -188,14 +163,6 @@ function renderGroupChat(state) {
   $('group-policy-blocked').textContent = groupChat.policyBlocked || 0;
   $('group-rate-limited').textContent = groupChat.rateLimited || 0;
   $('group-fused').textContent = groupChat.fused || 0;
-  const fuses = groupChat.fuses || [];
-  const fuseStatus = $('group-fuse-status');
-  fuseStatus.classList.toggle('active', fuses.length > 0);
-  fuseStatus.textContent = fuses.length
-    ? fuses.map((fuse) => (
-      `群 ${fuse.groupId} · ${fuse.reason} · 至 / UNTIL ${time(fuse.untilAt)}`
-    )).join(' | ')
-    : '没有群聊熔断 / NO ACTIVE FUSES';
 
   const discovered = groupChat.discovered || [];
   if (!discovered.length) {
@@ -205,23 +172,76 @@ function renderGroupChat(state) {
     $('group-list').replaceChildren(empty);
     return;
   }
+  const fuseByGroup = new Map((groupChat.fuses || []).map((fuse) => [String(fuse.groupId), fuse]));
   $('group-list').replaceChildren(...discovered.map((group) => {
+    const gid = String(group.groupId);
+    const fuse = fuseByGroup.get(gid);
+    const mode = group.mode || 'MENTION_ONLY';
     const button = document.createElement('button');
-    button.className = 'group-chip';
+    button.className = fuse ? 'group-chip fused' : 'group-chip';
     button.type = 'button';
-    button.dataset.groupId = group.groupId;
+    button.dataset.groupId = gid;
+
+    // 群头像占位框（方形色块 + 群名首字，后续换真实头像；双击展开/收起 ID + members）
+    const avatar = document.createElement('span');
+    avatar.className = 'avatar-placeholder';
+    avatar.textContent = (group.name || '?').slice(0, 1);
+
+    // 文本列：群名 + meta（meta 默认隐藏，双击头像展开）
+    const body = document.createElement('span');
+    body.className = 'chip-body';
     const name = document.createElement('strong');
     name.textContent = group.name;
     const meta = document.createElement('small');
-    meta.textContent = `ID ${group.groupId} · ${group.memberCount || 0} members`;
-    button.append(name, meta);
-    button.addEventListener('click', () => {
-      const values = new Set(allowlistFromInput());
-      values.add(String(group.groupId));
-      $('group-allowlist').value = [...values].join(', ');
-      $('group-config-hint').textContent =
-        `已加入输入框 / Added：${group.name}；点击保存后生效 / Save to apply`;
+    meta.className = 'chip-meta';
+    meta.textContent = `ID ${gid} · ${group.memberCount || 0} members`;
+    body.append(name, meta);
+
+    // 红绿灯：绿(艾特回复) / 黄(仅接收不回复) / 红(不接收)，当前模式点亮
+    const lights = document.createElement('span');
+    lights.className = 'traffic-lights';
+    lights.dataset.mode = mode;
+    for (const [m, cls, title] of [
+      ['OFF', 'red', '不接收 / IGNORE'],
+      ['OBSERVE', 'amber', '仅接收不回复 / RECEIVE ONLY'],
+      ['MENTION_ONLY', 'green', '艾特回复 / REPLY ON @'],
+    ]) {
+      const dot = document.createElement('i');
+      dot.className = `dot dot-${cls}`;
+      dot.title = title;
+      lights.append(dot);
+    }
+
+    button.append(avatar, body, lights);
+
+    // 熔断：红色动态进度底（宽度 = 剩余/总时长，1s interval 刷新）
+    if (fuse) {
+      button.dataset.fuseUntil = fuse.untilAt;
+      button.dataset.fuseStart = fuse.trippedAt;
+      const progress = document.createElement('span');
+      progress.className = 'fuse-progress';
+      // 创建时即写入初始宽度，避免渲染后先显示 CSS 100% 再跳回实际值（SSE 每 4s 重建的跳变 bug）
+      const total = Date.parse(fuse.untilAt) - Date.parse(fuse.trippedAt);
+      const remain = Math.max(0, Date.parse(fuse.untilAt) - Date.now());
+      progress.style.width = `${total > 0 ? (remain / total) * 100 : 0}%`;
+      button.append(progress);
+    }
+
+    // 点击条目（非头像区域）→ 弹窗切换接收模式
+    button.addEventListener('click', () => openGroupStatusModal(gid, group.name, mode));
+    // 头像：单击 = 弹窗（250ms 防抖，避免双击误触）；双击 = 展开/收起 ID + members
+    let avatarClickTimer = null;
+    avatar.addEventListener('click', (event) => {
+      event.stopPropagation();
+      clearTimeout(avatarClickTimer);
+      avatarClickTimer = setTimeout(() => openGroupStatusModal(gid, group.name, mode), 250);
     });
+    avatar.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      clearTimeout(avatarClickTimer);
+      body.classList.toggle('show-meta');
+    });
+
     return button;
   }));
 }
@@ -363,25 +383,6 @@ function render(state) {
     }));
   }
 
-  if (!state.errors.length) {
-    const p = document.createElement('p');
-    const t = document.createElement('time');
-    t.textContent = time(state.now);
-    const source = document.createElement('span');
-    source.textContent = '系统 / SYS';
-    p.append(t, source, '没有错误记录 / No errors recorded');
-    $('errors').replaceChildren(p);
-  } else {
-    $('errors').replaceChildren(...state.errors.map((error) => {
-      const p = document.createElement('p');
-      const t = document.createElement('time');
-      t.textContent = time(error.time);
-      const source = document.createElement('span');
-      source.textContent = error.source;
-      p.append(t, source, ` ${error.message}`);
-      return p;
-    }));
-  }
   $('uptime').textContent = `运行时间 / UPTIME ${duration(state.startedAt)}`;
 }
 
@@ -536,6 +537,103 @@ fetch('/api/status').then((response) => response.json()).then(render);
 const events = new EventSource('/events');
 events.onmessage = (event) => render(JSON.parse(event.data));
 
+// ── 终端日志流（/logs SSE）──
+// 行格式：[HH:MM:SS] [LEVEL] message；跟随滚动，用户上翻时不强制拽回
+const termLog = $('term-log');
+const MAX_TERM_LINES = 2000;
+const TERM_RE = /^\[(\d{2}:\d{2}:\d{2})\] \[([A-Z]+)\]\s?(.*)$/s;
+let termStarted = false;
+
+function appendTermLine(raw) {
+  if (!termStarted) {
+    termLog.replaceChildren();
+    termStarted = true;
+  }
+  const p = document.createElement('p');
+  const t = document.createElement('time');
+  const m = TERM_RE.exec(raw);
+  if (m) {
+    t.textContent = m[1];
+    const lvl = document.createElement('span');
+    lvl.textContent = m[2];
+    lvl.className = `lvl lvl-${m[2].toLowerCase()}`;
+    p.append(t, lvl, document.createTextNode(` ${m[3]}`));
+  } else {
+    t.textContent = time(new Date());
+    p.append(t, document.createTextNode(` ${raw}`));
+  }
+  const stick = termLog.scrollHeight - termLog.scrollTop - termLog.clientHeight < 40;
+  termLog.append(p);
+  while (termLog.childElementCount > MAX_TERM_LINES) termLog.firstElementChild.remove();
+  if (stick) termLog.scrollTop = termLog.scrollHeight;
+}
+
+const termStream = new EventSource('/logs');
+termStream.onmessage = (event) => appendTermLine(event.data);
+
+// ── 熔断倒计时：每秒刷新红色进度底的剩余宽度（剩余/总时长）──
+setInterval(() => {
+  document.querySelectorAll('.group-chip.fused').forEach((chip) => {
+    const until = Date.parse(chip.dataset.fuseUntil);
+    const start = Date.parse(chip.dataset.fuseStart);
+    if (!until || !start) return;
+    const total = until - start;
+    const remain = Math.max(0, until - Date.now());
+    const bar = chip.querySelector('.fuse-progress');
+    if (bar) bar.style.width = `${total > 0 ? (remain / total) * 100 : 0}%`;
+  });
+}, 1000);
+
+// ── 复制最近 15 条终端日志 ──
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.append(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      resolve();
+    } catch (err) {
+      reject(err);
+    }
+    ta.remove();
+  });
+}
+
+$('copy-term-log').addEventListener('click', async () => {
+  const btn = $('copy-term-log');
+  const rows = [...termLog.querySelectorAll('p')].slice(-15);
+  if (!rows.length) return;
+  const text = rows.map((p) => {
+    const t = p.querySelector('time')?.textContent || '';
+    const lvl = p.querySelector('.lvl')?.textContent || '';
+    const msg = [...p.childNodes]
+      .filter((n) => n.nodeType === Node.TEXT_NODE)
+      .map((n) => n.textContent)
+      .join('')
+      .trim();
+    return `[${t}] [${lvl}] ${msg}`;
+  }).join('\n');
+  try {
+    await copyText(text);
+    btn.textContent = '已复制';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = '复制';
+      btn.classList.remove('copied');
+    }, 1600);
+  } catch (err) {
+    btn.textContent = '复制失败';
+    setTimeout(() => { btn.textContent = '复制'; }, 1600);
+  }
+});
+
 window.addEventListener('hashchange', navigate);
 applyView(currentView());
 
@@ -579,44 +677,61 @@ $('manual-offline-toggle').addEventListener('click', async () => {
   }
 });
 
-$('group-config-save').addEventListener('click', async () => {
-  const button = $('group-config-save');
-  const hint = $('group-config-hint');
-  const mode = $('group-mode').value;
-  const allowlist = allowlistFromInput();
-  const blockedTerms = blockedTermsFromInput();
-  if (
-    mode === 'MENTION_ONLY'
-    && !window.confirm(
-      '启用后，只有白名单群中明确 @ 机器人的文本才会进入 AstrBot 并可能产生回复。空白名单仍不会回复。\n\nOnly explicit @ messages from allowlisted groups can reach AstrBot. Continue?',
-    )
-  ) return;
+// ── 群聊接收模式切换弹窗（2026-08-07）──
+const MODE_LABELS = { MENTION_ONLY: '艾特回复', OBSERVE: '仅接收不回复', OFF: '不接收' };
+const statusModal = $('group-status-modal');
+let pendingGroupId = null;
+let pendingGroupMode = null;
+
+function openGroupStatusModal(groupId, name, current) {
+  pendingGroupId = groupId;
+  pendingGroupMode = current;
+  $('group-status-modal-group').textContent =
+    `${name}（当前：${MODE_LABELS[current] || current}）`;
+  document.querySelectorAll('.modal-option').forEach((opt) => {
+    opt.classList.toggle('selected', opt.dataset.mode === current);
+  });
+  statusModal.hidden = false;
+}
+
+function closeGroupStatusModal() {
+  statusModal.hidden = true;
+  pendingGroupId = null;
+  pendingGroupMode = null;
+}
+
+$('group-status-modal-cancel').addEventListener('click', closeGroupStatusModal);
+statusModal.addEventListener('click', (event) => {
+  if (event.target === statusModal) closeGroupStatusModal();
+});
+document.querySelectorAll('.modal-option').forEach((opt) => {
+  opt.addEventListener('click', () => {
+    pendingGroupMode = opt.dataset.mode;
+    document.querySelectorAll('.modal-option')
+      .forEach((o) => o.classList.toggle('selected', o === opt));
+  });
+});
+$('group-status-modal-confirm').addEventListener('click', async () => {
+  const gid = pendingGroupId;
+  const target = pendingGroupMode;
+  if (!gid || !target) return closeGroupStatusModal();
+  const button = $('group-status-modal-confirm');
   button.disabled = true;
-  hint.textContent = '正在保存 / Saving...';
   try {
-    const response = await fetch('/api/group-chat/config', {
+    const response = await fetch('/api/group-chat/status', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-FEAGLE-Dashboard': '1',
       },
-      body: JSON.stringify({
-        mode,
-        allowlist,
-        blockedTerms,
-        confirm: mode === 'MENTION_ONLY' ? 'ENABLE_GROUP_REPLY' : undefined,
-      }),
+      body: JSON.stringify({ groupId: gid, mode: target }),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '保存失败 / Save failed');
+    if (!response.ok) throw new Error(payload.error || '切换失败 / Switch failed');
     render(payload);
-    hint.innerHTML = mode === 'OFF'
-      ? '群聊已完全关闭。<span>Group processing is fully disabled.</span>'
-      : mode === 'OBSERVE'
-        ? '仅观察：不会送入 AstrBot 或调用模型。<span>No AstrBot or model calls.</span>'
-        : '仅白名单群内明确 @ 才会回复。<span>Allowlist + explicit @ required.</span>';
+    closeGroupStatusModal();
   } catch (error) {
-    hint.textContent = `保存失败 / Failed：${error.message}`;
+    $('group-status-modal-group').textContent = `切换失败 / Failed：${error.message}`;
   } finally {
     button.disabled = false;
   }
