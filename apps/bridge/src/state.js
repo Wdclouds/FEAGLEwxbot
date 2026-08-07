@@ -237,6 +237,23 @@ export class RuntimeState extends EventEmitter {
     this.broadcast();
   }
 
+  /** 重启后恢复已知群列表（idMap 持久化的 group 实体），保留 groupModes 映射。 */
+  restoreGroups(groups) {
+    if (!Array.isArray(groups) || !groups.length) return;
+    const discovered = groups.map((group) => ({
+      groupId: String(group.groupId || ''),
+      name: String(group.name || '微信群').slice(0, 80),
+      memberCount: 0,
+      lastSeenAt: group.lastSeenAt || new Date().toISOString(),
+      mode: this.groupChat.groupModes[String(group.groupId || '')]
+        || this.groupChat.mode,
+    })).filter((g) => g.groupId);
+    this.groupChat.discovered = discovered.slice(0, 50);
+    this.groupChat.lastMessageAt = discovered[0]?.lastSeenAt
+      || this.groupChat.lastMessageAt;
+    this.broadcast();
+  }
+
   broadcast() {
     this.emit('snapshot', this.snapshot());
   }

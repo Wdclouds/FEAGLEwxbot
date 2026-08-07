@@ -95,6 +95,21 @@ export class IdMap {
     `).get(Number(onebotId)) || null;
   }
 
+  /** 列出已知群实体（Dashboard 重启后恢复群列表用，group 实体已持久化）。 */
+  listGroups() {
+    const rows = this.db.prepare(`
+      SELECT onebot_id, protocol_id, nickname, last_seen_at
+      FROM entities WHERE kind = ?
+      ORDER BY last_seen_at DESC
+    `).all('group');
+    return rows.map((row) => ({
+      groupId: String(row.onebot_id),
+      protocolId: String(row.protocol_id),
+      name: String(row.nickname || '微信群').slice(0, 80),
+      lastSeenAt: String(row.last_seen_at || ''),
+    }));
+  }
+
   contacts(kind = 'user') {
     return this.db.prepare(`
       SELECT onebot_id, protocol_id, nickname

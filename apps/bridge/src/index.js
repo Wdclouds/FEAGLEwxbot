@@ -174,6 +174,12 @@ const dashboard = new DashboardServer({
 });
 const idMap = new IdMap();
 idMap.pruneMessageReceipts();
+// 重启后恢复已知群列表（idMap 持久化的 group 实体），避免 discovered 空白
+try {
+  state.restoreGroups(idMap.listGroups());
+} catch (error) {
+  state.addError('idmap-list-groups', error);
+}
 const groupSafety = new GroupSafetyGate({
   blockedTerms: savedControl.groupBlockedTerms,
   memberLimit: settings.groupMemberRateLimit,
