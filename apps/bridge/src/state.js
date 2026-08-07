@@ -38,6 +38,13 @@ export class RuntimeState extends EventEmitter {
       restartRequired: false,
       detail: 'Web protocol transport',
     };
+    this.selfAvatar = {
+      wxid: '',
+      nickname: '',
+      avatarBase64: '',
+      avatarSize: 0,
+      updatedAt: '',
+    };
     this.android = {
       serverStatus: 'DISABLED',
       endpoint: '',
@@ -202,6 +209,7 @@ export class RuntimeState extends EventEmitter {
       now: new Date().toISOString(),
       wechat: this.wechat,
       transport: this.transport,
+      selfAvatar: this.selfAvatar,
       android: this.android,
       astrbot: this.astrbot,
       onebot: this.onebot,
@@ -212,6 +220,21 @@ export class RuntimeState extends EventEmitter {
       messages: this.messages,
       errors: this.errors,
     };
+  }
+
+  /** 更新 bot 自身头像（Agent 协议 9 / self_avatar 事件）。 */
+  setSelfAvatar(data) {
+    const wxid = String(data?.wxid || '').trim();
+    const avatarBase64 = String(data?.avatarBase64 || '');
+    if (!wxid || !avatarBase64) return;
+    this.selfAvatar = {
+      wxid,
+      nickname: String(data?.nickname || '').slice(0, 80),
+      avatarBase64,
+      avatarSize: Number(data?.avatarSize || 0),
+      updatedAt: new Date().toISOString(),
+    };
+    this.broadcast();
   }
 
   broadcast() {

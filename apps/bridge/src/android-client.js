@@ -354,6 +354,9 @@ export class AndroidWechatClient {
       case 'group_image':
         await this.handleGroupImage(socket, message);
         break;
+      case 'self_avatar':
+        this.state.setSelfAvatar(message);
+        break;
       case 'command_result':
         this.handleCommandResult(message);
         break;

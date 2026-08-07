@@ -114,6 +114,21 @@ function setService(key, status, detail) {
   service.querySelector('span').style.color = color;
 }
 
+function renderSelfAvatar(state) {
+  const el = $('bot-avatar');
+  const sa = state.selfAvatar || {};
+  el.classList.remove('visible');
+  el.title = '';
+  el.innerHTML = '';
+  if (!sa.avatarBase64) return;
+  el.classList.add('visible');
+  el.title = sa.nickname || sa.wxid || 'FEAGLE';
+  const img = document.createElement('img');
+  img.src = `data:image/jpeg;base64,${sa.avatarBase64}`;
+  img.alt = sa.nickname || 'bot';
+  el.appendChild(img);
+}
+
 function renderAdminMode(state) {
   const mode = state.wechat.adminMode || 'RUNNING';
   const badge = $('admin-mode-badge');
@@ -247,6 +262,7 @@ function renderGroupChat(state) {
 }
 
 function render(state) {
+  renderSelfAvatar(state);
   renderAdminMode(state);
   renderGroupChat(state);
   const transport = state.transport || { active: 'wechat4u', detail: '' };
