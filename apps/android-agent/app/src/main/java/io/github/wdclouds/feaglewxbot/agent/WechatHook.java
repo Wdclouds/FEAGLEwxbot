@@ -94,6 +94,11 @@ public final class WechatHook implements IXposedHookLoadPackage {
                         }
                         log("active version=" + Wechat8070Adapter.TARGET_VERSION
                                 + " process=" + currentProcess);
+                        if (isMain) {
+                            mainHandler.postDelayed(
+                                    WechatHook::scheduleSelfAvatarReport,
+                                    5_000);
+                        }
                     }
                 });
     }
@@ -120,11 +125,13 @@ public final class WechatHook implements IXposedHookLoadPackage {
             if (parsed == null) {
                 return;
             }
+            String groupName = Wechat8070Adapter.groupNameFor(talker);
             sendCapturedText(
                     source,
                     AgentProtocol.MSG_GROUP_TEXT,
                     eventId(talker, content, createTime, msgId, msgSvrId),
                     talker,
+                    groupName,
                     parsed.sender,
                     parsed.content,
                     createTime,
@@ -143,6 +150,7 @@ public final class WechatHook implements IXposedHookLoadPackage {
                 AgentProtocol.MSG_PRIVATE_TEXT,
                 eventId(talker, content, createTime, msgId, msgSvrId),
                 talker,
+                null,
                 "",
                 content,
                 createTime,
@@ -376,6 +384,7 @@ public final class WechatHook implements IXposedHookLoadPackage {
             int messageType,
             String eventId,
             String talker,
+            String groupName,
             String sender,
             String content,
             long createTime,
@@ -394,6 +403,9 @@ public final class WechatHook implements IXposedHookLoadPackage {
         Bundle data = new Bundle();
         data.putString("event_id", eventId);
         data.putString("talker", talker);
+        if (groupName != null && !groupName.isEmpty()) {
+            data.putString("group_name", groupName);
+        }
         data.putString("sender", sender);
         data.putString("content", content);
         data.putBoolean("mentioned", mentioned);
@@ -554,6 +566,91 @@ public final class WechatHook implements IXposedHookLoadPackage {
         data.putString("error", error);
         result.setData(data);
         sendToAgent(result);
+    }
+
+    /** Bot 头像上报（2026-08-07）：启动延迟 5s 后读 SharedPreferences 拿自己 wxid，
+     *  wxid → MD5 → avatar 本地文件 → 压缩（256px/q70）→ base64 → 协议 9。
+     *  只在主进程执行一次。 */
+    private static void scheduleSelfAvatarReport() {
+        Thread worker = new Thread(() -> {
+            try {
+                android.content.SharedPreferences prefs = appContext
+                        .getSharedPreferences("com.tencent.mm_preferences",
+                                android.content.Context.MODE_PRIVATE);
+                String wxid = prefs.getString("login_weixin_username", "");
+                String nickname = prefs.getString("last_login_nick_name", "");
+                if (wxid.isEmpty()) {
+                    log("self avatar: no wxid in preferences");
+                    return;
+                }
+                String md5 = md5Hex(wxid);
+                if (md5.length() != 32) {
+                    log("self avatar: md5 failed");
+                    return;
+                }
+                String p1 = md5.substring(0, 2);
+                String p2 = md5.substring(2, 4);
+                java.io.File mmDir = new java.io.File(
+                        "/data/data/com.tencent.mm/MicroMsg");
+                java.io.File[] userDirs = mmDir.listFiles();
+                if (userDirs == null) {
+                    return;
+                }
+                java.io.File avatarFile = null;
+                for (java.io.File dir : userDirs) {
+                    if (!dir.isDirectory() || dir.getName().length() != 32) {
+                        continue;
+                    }
+                    java.io.File candidate = new java.io.File(dir,
+                            "avatar/" + p1 + "/" + p2
+                            + "/user_" + md5 + ".png");
+                    if (candidate.isFile() && candidate.length() > 0) {
+                        avatarFile = candidate;
+                        break;
+                    }
+                }
+                if (avatarFile == null) {
+                    log("self avatar: file not found");
+                    return;
+                }
+                byte[] jpeg = compressToJpeg(avatarFile, 256, 70);
+                if (jpeg == null) {
+                    log("self avatar: compress failed");
+                    return;
+                }
+                String b64 = android.util.Base64.encodeToString(
+                        jpeg, android.util.Base64.NO_WRAP);
+                Message outbound = Message.obtain(
+                        null, AgentProtocol.MSG_SELF_AVATAR);
+                Bundle data = new Bundle();
+                data.putString("wxid", wxid);
+                data.putString("nickname", nickname);
+                data.putString("image_base64", b64);
+                data.putInt("image_size", jpeg.length);
+                outbound.setData(data);
+                sendToAgent(outbound);
+                log("self avatar reported size=" + jpeg.length);
+            } catch (Throwable error) {
+                logError("self avatar report failed", error);
+            }
+        });
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private static String md5Hex(String input) {
+        try {
+            java.security.MessageDigest digest =
+                    java.security.MessageDigest.getInstance("MD5");
+            byte[] bytes = digest.digest(input.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder(32);
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     private static void sendToAgent(Message message) {

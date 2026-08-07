@@ -162,6 +162,9 @@ public final class BridgeForegroundService extends Service {
                 case AgentProtocol.MSG_GROUP_IMAGE:
                     forwardGroupImage(message.getData());
                     break;
+                case AgentProtocol.MSG_SELF_AVATAR:
+                    forwardSelfAvatar(message.getData());
+                    break;
                 case AgentProtocol.MSG_COMMAND_RESULT:
                     forwardCommandResult(message.getData());
                     break;
@@ -270,6 +273,7 @@ public final class BridgeForegroundService extends Service {
         String talker = data.getString("talker", "").trim();
         String sender = data.getString("sender", "").trim();
         String content = data.getString("content", "");
+        String groupName = data.getString("group_name", "").trim();
         if (eventId.isEmpty() || !validGroupTalker(talker)
                 || !validGroupSender(sender)
                 || content.isEmpty() || content.length() > 2_000) {
@@ -293,6 +297,9 @@ public final class BridgeForegroundService extends Service {
         put(event, "talker", talker);
         put(event, "sender", sender);
         put(event, "content", content);
+        if (!groupName.isEmpty()) {
+            put(event, "groupName", groupName);
+        }
         put(event, "mentioned", data.getBoolean("mentioned", false));
         put(event, "createTime", data.getLong("create_time", 0));
         put(event, "msgId", data.getLong("msg_id", 0));
@@ -304,6 +311,21 @@ public final class BridgeForegroundService extends Service {
         pendingEvents.put(eventId, payload);
         persistReliableState();
         sendPendingPayload(payload);
+    }
+
+    private void forwardSelfAvatar(Bundle data) {
+        String wxid = data.getString("wxid", "").trim();
+        String nickname = data.getString("nickname", "").trim();
+        String imageBase64 = data.getString("image_base64", "");
+        if (wxid.isEmpty() || imageBase64.isEmpty()) {
+            return;
+        }
+        JSONObject event = baseEnvelope("self_avatar");
+        put(event, "wxid", wxid);
+        put(event, "nickname", nickname);
+        put(event, "avatarBase64", imageBase64);
+        put(event, "avatarSize", data.getInt("image_size", 0));
+        sendOrQueueTransient(event.toString());
     }
 
     private void forwardCommandResult(Bundle data) {

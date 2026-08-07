@@ -1,6 +1,7 @@
 package io.github.wdclouds.feaglewxbot.agent;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.ConcurrentHashMap;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -50,6 +51,7 @@ final class Wechat8070Adapter {
                 addMsgClass,
                 "storage-dispatcher");
         installed += hookLegacyStoragePaths(classLoader, messageClass);
+        installed += hookContactEntity(classLoader);
         if (installed == 0) {
             throw new NoSuchMethodException("No documented 8.0.70 inbound path found");
         }
@@ -334,7 +336,68 @@ final class Wechat8070Adapter {
         }
     }
 
-    /** 打码 wxid 形式的标识（诊断日志用，保留其余内容）。 */
+    /** 群名缓存（talker → field_nickname），由 Contact getter hook 填充。 */
+    private static final java.util.Map<String, String> GROUP_NAME_CACHE =
+            new ConcurrentHashMap<>();
+
+    /** 查询群名（未缓存返回 null，Bridge 侧 fallback 占位名）。 */
+    static String groupNameFor(String talker) {
+        if (talker == null) {
+            return null;
+        }
+        return GROUP_NAME_CACHE.get(talker);
+    }
+
+    /** Hook Contact 实体（pl.f2 = rcontact 表）的 getter 方法：微信渲染会话列表
+     *  必然调用，捕获实例缓存群名（field_nickname）。 */
+    private static int hookContactEntity(ClassLoader classLoader) {
+        try {
+            Class<?> contactClass = XposedHelpers.findClass("pl.f2", classLoader);
+            XC_MethodHook cacheHook = new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        Object contact = param.thisObject;
+                        String username = (String) XposedHelpers
+                                .getObjectField(contact, "field_username");
+                        if (username == null || !username.toLowerCase(
+                                java.util.Locale.ROOT).endsWith("@chatroom")) {
+                            return;
+                        }
+                        Object nickname = XposedHelpers.getObjectField(
+                                contact, "field_nickname");
+                        if (nickname instanceof String
+                                && !((String) nickname).isEmpty()) {
+                            GROUP_NAME_CACHE.put(username, (String) nickname);
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+            };
+            int hooked = 0;
+            for (Method method : contactClass.getDeclaredMethods()) {
+                if (method.getParameterTypes().length == 0
+                        && method.getReturnType() == String.class) {
+                    try {
+                        method.setAccessible(true);
+                        XposedBridge.hookMethod(method, cacheHook);
+                        hooked++;
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+            try {
+                XposedBridge.hookAllConstructors(contactClass, cacheHook);
+            } catch (Throwable ignored) {
+            }
+            WechatHook.logAdapterInfo(
+                    "8.0.70 contact entity hook installed getters=" + hooked);
+            return hooked > 0 ? 1 : 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
     /** 从 XML 字符串中提取指定标签的文本（单行标签，如 <title>xxx</title>）。 */
     private static String extractXmlTag(String xml, String tag) {
         if (xml == null || tag == null) {
@@ -372,6 +435,7 @@ final class Wechat8070Adapter {
         return sender;
     }
 
+    /** 打码 wxid 形式的标识（诊断日志用，保留其余内容）。 */
     private static String maskId(String value) {
         if (value == null || value.isEmpty()) {
             return value;
