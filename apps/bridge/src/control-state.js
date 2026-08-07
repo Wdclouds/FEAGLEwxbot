@@ -78,6 +78,7 @@ export class PersistentControlState {
       groupBlockedTerms: normalizeBlockedTerms(stored?.groupBlockedTerms),
       groupModes,
       selfAvatar: normalizeSelfAvatar(stored?.selfAvatar),
+      sleepOverride: Boolean(stored?.sleepOverride),
       changedAt: String(stored?.changedAt || ''),
     };
   }
@@ -140,9 +141,19 @@ export class PersistentControlState {
     });
   }
 
+  /** 休眠豁免：解除时限 = 休眠时段内也正常回复（休眠结束自动重置见 index.js updateSchedule） */
+  saveSleepOverride(enabled) {
+    const current = this.load();
+    return this.write({
+      ...current,
+      sleepOverride: Boolean(enabled),
+      changedAt: new Date(this.now()).toISOString(),
+    });
+  }
+
   write(values) {
     const snapshot = {
-      version: 5,
+      version: 6,
       wechatAdminMode: normalizeWechatAdminMode(values.wechatAdminMode),
       groupChatMode: normalizeGroupChatMode(values.groupChatMode),
       groupAllowlist: normalizeGroupAllowlist(values.groupAllowlist),
@@ -151,6 +162,7 @@ export class PersistentControlState {
         ? values.groupModes
         : {},
       selfAvatar: normalizeSelfAvatar(values.selfAvatar),
+      sleepOverride: Boolean(values.sleepOverride),
       changedAt: String(values.changedAt || new Date(this.now()).toISOString()),
     };
     mkdirSync(dirname(this.path), { recursive: true });

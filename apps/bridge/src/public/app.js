@@ -131,6 +131,9 @@ function renderSelfAvatar(state) {
 
 function renderAdminMode(state) {
   const mode = state.wechat.adminMode || 'RUNNING';
+  const schedule = state.schedule || {};
+  const sleepOverride = schedule.sleepOverride === true;
+  const sleeping = schedule.mode === 'SLEEPING';
   const badge = $('admin-mode-badge');
   const pauseButton = $('pause-toggle');
   badge.dataset.mode = mode;
@@ -140,17 +143,25 @@ function renderAdminMode(state) {
     $('admin-mode-hint').textContent = '微信与自动恢复已停止 / WeChat & auto-heal stopped';
     pauseButton.disabled = true;
     pauseButton.textContent = '解除时限';
-  } else if (mode === 'PAUSED') {
-    $('admin-mode-hint').textContent = '时限中：只接收不回复 / Time limit: receive only';
+  } else if (sleepOverride) {
+    // 已解除时限（休眠豁免）：休眠时段内也正常回复
+    $('admin-mode-hint').textContent = '已解除时限：休眠时段内正常回复 / Sleep override active';
+    pauseButton.disabled = false;
+    pauseButton.textContent = '恢复时限';
+  } else if (sleeping) {
+    // 休眠时限中：只接收不回复
+    $('admin-mode-hint').textContent = '时限中：只接收不回复，可解除 / Time limit: receive only';
     pauseButton.disabled = false;
     pauseButton.textContent = '解除时限';
   } else {
+    // 非休眠时段：没有时限，按钮不可用
     $('admin-mode-hint').textContent = '正常接收并回复消息 / Processing messages';
-    pauseButton.disabled = false;
-    pauseButton.textContent = '恢复时限';
+    pauseButton.disabled = true;
+    pauseButton.textContent = '解除时限';
   }
 
   pauseButton.dataset.mode = mode;
+  pauseButton.dataset.sleepOverride = String(sleepOverride);
 }
 
 function renderGroupChat(state) {
@@ -181,10 +192,9 @@ function renderGroupChat(state) {
     const fuse = fuseByGroup.get(gid);
     const mode = group.mode || 'MENTION_ONLY';
     const sleeping = ((state.schedule || {}).mode) === 'SLEEPING';
-    const paused = (state.wechat.adminMode || 'RUNNING') === 'PAUSED';
-    // 时限 = 休眠时段 + 手动暂停（PAUSED）：两者 bot 实际都只收不回复
+    // 时限 = 休眠时段（豁免「解除时限」后后端 sleeping()=false → mode=ACTIVE → 不降级）
     // 实时状态优先级：熔断(灰) > 时限(绿灯降级为黄) > 手动配置色
-    const timeLimited = sleeping || paused;
+    const timeLimited = sleeping;
     const button = document.createElement('button');
     button.className = fuse ? 'group-chip fused' : 'group-chip';
     button.type = 'button';
@@ -395,6 +405,18 @@ async function setAdminMode(mode) {
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || '状态切换失败 / State change failed');
+  render(payload);
+}
+
+// 解除时限 = 休眠豁免：休眠时段内也正常回复；休眠结束自动重置（后端 updateSchedule）
+async function setSleepOverride(enabled) {
+  const response = await fetch('/api/schedule/override', {
+    method: 'POST',
+    headers: mutationHeaders(),
+    body: JSON.stringify({ enabled: Boolean(enabled) }),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || '切换失败 / Override change failed');
   render(payload);
 }
 
@@ -637,10 +659,10 @@ $('theme-toggle').addEventListener('click', () => {
 
 $('pause-toggle').addEventListener('click', async () => {
   const button = $('pause-toggle');
-  const currentMode = button.dataset.mode || 'RUNNING';
+  const sleepOverride = button.dataset.sleepOverride === 'true';
   button.disabled = true;
   try {
-    await setAdminMode(currentMode === 'PAUSED' ? 'RUNNING' : 'PAUSED');
+    await setSleepOverride(!sleepOverride);
   } catch (error) {
     const offlineHint2 = $('manual-offline-hint');
     if (offlineHint2) offlineHint2.textContent = `切换失败 / Failed：${error.message}`;

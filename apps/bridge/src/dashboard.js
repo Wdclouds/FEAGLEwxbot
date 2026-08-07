@@ -25,6 +25,7 @@ export class DashboardServer {
     sendNotificationTest = async () => state.snapshot(),
     forceWechatRelogin = async () => state.snapshot(),
     setWechatAdminMode = async () => state.snapshot(),
+    setSleepOverride = async () => state.snapshot(),
     setGroupChatConfig = async () => state.snapshot(),
     setGroupChatMode = async () => state.snapshot(),
     getBridgeSettings = () => ({}),
@@ -39,6 +40,7 @@ export class DashboardServer {
     this.sendNotificationTest = sendNotificationTest;
     this.forceWechatRelogin = forceWechatRelogin;
     this.setWechatAdminMode = setWechatAdminMode;
+    this.setSleepOverride = setSleepOverride;
     this.setGroupChatConfig = setGroupChatConfig;
     this.setGroupChatMode = setGroupChatMode;
     this.getBridgeSettings = getBridgeSettings;
@@ -298,6 +300,49 @@ export class DashboardServer {
           return;
         }
         Promise.resolve(this.setWechatAdminMode(payload.mode))
+          .then((snapshot) => {
+            response.writeHead(202, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify(snapshot));
+          })
+          .catch((error) => {
+            response.writeHead(409, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify({
+              error: String(error?.message || error).slice(0, 200),
+            }));
+          });
+      });
+      return;
+    }
+
+    // ---- POST /api/schedule/override（解除时限 = 休眠豁免，休眠时段内也正常回复）----
+    if (url.pathname === '/api/schedule/override') {
+      if (request.method !== 'POST') {
+        response.writeHead(405, {
+          Allow: 'POST',
+          'Content-Type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+      }
+      if (!this.authorizeMutation(request, response)) return;
+      if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
+        response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+        return;
+      }
+      this.readJson(request, response, 1_024, (payload) => {
+        if (typeof payload.enabled !== 'boolean') {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'enabled must be a boolean' }));
+          return;
+        }
+        Promise.resolve(this.setSleepOverride(payload.enabled))
           .then((snapshot) => {
             response.writeHead(202, {
               'Content-Type': 'application/json; charset=utf-8',

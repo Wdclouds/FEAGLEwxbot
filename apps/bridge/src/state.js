@@ -125,6 +125,7 @@ export class RuntimeState extends EventEmitter {
     if (
       this.schedule.mode === next.mode
       && this.schedule.testMode === next.testMode
+      && this.schedule.sleepOverride === next.sleepOverride
     ) return;
     this.schedule = next;
     this.broadcast();

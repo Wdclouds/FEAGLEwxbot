@@ -51,6 +51,7 @@ let savedControl = {
   groupBlockedTerms: [],
   groupModes: {},
   selfAvatar: null,
+  sleepOverride: false,
   changedAt: '',
 };
 try {
@@ -73,17 +74,32 @@ if (savedControl.selfAvatar) {
 }
 const quietRange = parseQuietHours(settings.quietHours);
 const timezone = settings.timezone;
+// 休眠豁免（解除时限）：休眠时段内也正常回复；休眠结束由 updateSchedule 自动重置
+let sleepOverride = savedControl.sleepOverride;
 state.patch('schedule', {
   timezone,
   quietHours: settings.quietHours,
+  sleepOverride,
 });
 let testMode = false;
-const sleeping = () => !testMode && isQuietTime(new Date(), quietRange, timezone);
+const sleeping = () => !testMode && !sleepOverride && isQuietTime(new Date(), quietRange, timezone);
 
-const updateSchedule = () => state.setSchedule({
-  mode: testMode ? 'TEST' : (sleeping() ? 'SLEEPING' : 'ACTIVE'),
-  testMode,
-});
+const updateSchedule = () => {
+  // 休眠时段结束后自动关闭豁免（下次休眠默认又只收不回复）
+  if (sleepOverride && !isQuietTime(new Date(), quietRange, timezone)) {
+    sleepOverride = false;
+    try {
+      controlStore.saveSleepOverride(false);
+    } catch (error) {
+      state.addError('sleep-override-reset', error);
+    }
+  }
+  state.setSchedule({
+    mode: testMode ? 'TEST' : (sleeping() ? 'SLEEPING' : 'ACTIVE'),
+    testMode,
+    sleepOverride,
+  });
+};
 
 const setTestMode = (enabled) => {
   testMode = Boolean(enabled);
@@ -131,6 +147,13 @@ const dashboard = new DashboardServer({
       notifier.cancelReloginTest();
     }
     return wechat.setAdminMode(mode);
+  },
+  setSleepOverride: async (enabled) => {
+    sleepOverride = Boolean(enabled);
+    controlStore.saveSleepOverride(sleepOverride);
+    updateSchedule();
+    console.log(`[Schedule] sleep override ${sleepOverride ? 'enabled (时限已解除)' : 'disabled'}`);
+    return state.snapshot();
   },
   setGroupChatConfig: async (mode, allowlist, blockedTerms) => {
     controlStore.saveGroupChatConfig(mode, allowlist, blockedTerms);
