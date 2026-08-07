@@ -491,17 +491,29 @@ function bindSave(formId, statusId) {
     if (!form.reportValidity()) return;
     button.disabled = true;
     if (status) status.textContent = '正在校验并保存 / Validating and saving...';
+    // 超时兜底：保存成功后容器会重启（~500ms shutdown），响应 body 可能在重启窗口丢失，
+    // fetch 无超时会永久挂起（2026-08-08 实测：按钮一直 loading）。12s 后视为已提交。
+    const controller = new AbortController();
+    const saveTimer = setTimeout(() => controller.abort(), 12_000);
     try {
       const response = await fetch('/api/settings', {
         method: 'PUT',
         headers: mutationHeaders(),
         body: JSON.stringify(collectSettings(form)),
+        signal: controller.signal,
       });
+      clearTimeout(saveTimer);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || '保存失败');
       if (status) status.textContent = '设置已保存，Bridge 正在重启；数秒后刷新页面 / Restarting, refresh shortly.';
+      button.disabled = false;
     } catch (error) {
-      if (status) status.textContent = `保存失败 / Failed: ${error.message}`;
+      clearTimeout(saveTimer);
+      if (status) {
+        status.textContent = error.name === 'AbortError'
+          ? '已提交，Bridge 正在重启；请稍后刷新页面 / Submitted, restarting; refresh shortly.'
+          : `保存失败 / Failed: ${error.message}`;
+      }
       button.disabled = false;
     }
   });
