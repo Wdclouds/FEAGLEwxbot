@@ -81,36 +81,8 @@
               <strong>运行开关</strong>
               <small id="admin-mode-hint">正常接收并回复消息 / Processing messages</small>
             </div>
-            <div class="button-row">
-              <button id="pause-toggle" class="button secondary" type="button">
-                暂停回复
-              </button>
-              <button id="manual-offline-toggle" class="button danger" type="button" title="紧急离线会退出微信，并停止自动重连和二维码通知。Logs out WeChat and suppresses auto-heal & QR alerts.">
-                紧急离线
-              </button>
-            </div>
           </div>
 
-          <details class="toolbox">
-            <summary>测试与维护</summary>
-            <div class="toolbox-grid">
-              <div>
-                <button id="test-mode-toggle" class="button ghost" type="button" aria-pressed="false" title="临时忽略休眠时段 / Bypass quiet hours">
-                  测试模式
-                </button>
-              </div>
-              <div>
-                <button id="notification-test" class="button ghost blue" type="button" title="发送私聊测试通知 / Send a DM test">
-                  测试飞书
-                </button>
-              </div>
-              <div class="wide-tool">
-                <button id="force-relogin-test" class="button ghost danger" type="button" title="注销 Session，推送一次二维码并反馈结果 / Logout, send one QR and report">
-                  强制重登测试
-                </button>
-              </div>
-            </div>
-          </details>
         </article>
 
         <article class="panel login-panel">
@@ -243,6 +215,11 @@
           <div class="settings-section-title">时间计划</div>
           <div class="section-body field-grid">
             <div class="field"><label for="quietHours">休眠时段</label><input id="quietHours" data-setting="quietHours" placeholder="00:00-07:00" required></div>
+            <div class="field">
+              <button id="pause-toggle" class="button secondary" type="button">
+                解除时限
+              </button>
+            </div>
           </div>
         </section>
 

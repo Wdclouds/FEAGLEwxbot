@@ -133,36 +133,24 @@ function renderAdminMode(state) {
   const mode = state.wechat.adminMode || 'RUNNING';
   const badge = $('admin-mode-badge');
   const pauseButton = $('pause-toggle');
-  const offlineButton = $('manual-offline-toggle');
-  const offlineHint = $('manual-offline-hint');
   badge.dataset.mode = mode;
   badge.textContent = bilingualStatus(mode);
 
   if (mode === 'MANUAL_OFFLINE') {
     $('admin-mode-hint').textContent = '微信与自动恢复已停止 / WeChat & auto-heal stopped';
     pauseButton.disabled = true;
-    pauseButton.textContent = '暂停回复';
-    offlineButton.textContent = '恢复运行';
-    if (offlineHint) offlineHint.innerHTML =
-      '当前不会自动重连或推送二维码。<span>No reconnect or QR alerts while manually offline.</span>';
+    pauseButton.textContent = '解除时限';
   } else if (mode === 'PAUSED') {
     $('admin-mode-hint').textContent = '微信保持在线但不回复 / Connected without replies';
     pauseButton.disabled = false;
-    pauseButton.textContent = '恢复回复';
-    offlineButton.textContent = '紧急离线';
-    if (offlineHint) offlineHint.innerHTML =
-      '消息会被记录为暂停丢弃；连接与心跳仍保持。<span>Messages are dropped; session and heartbeat stay active.</span>';
+    pauseButton.textContent = '恢复时限';
   } else {
     $('admin-mode-hint').textContent = '正常接收并回复消息 / Processing messages';
     pauseButton.disabled = false;
-    pauseButton.textContent = '暂停回复';
-    offlineButton.textContent = '紧急离线';
-    if (offlineHint) offlineHint.innerHTML =
-      '紧急离线会退出微信，并停止自动重连和二维码通知。<span>Logs out WeChat and suppresses auto-heal & QR alerts.</span>';
+    pauseButton.textContent = '解除时限';
   }
 
   pauseButton.dataset.mode = mode;
-  offlineButton.dataset.mode = mode;
 }
 
 function renderGroupChat(state) {
@@ -329,40 +317,6 @@ function render(state) {
   setService('schedule', state.schedule.mode);
   $('timezone').textContent = state.schedule.timezone;
   $('quiet-hours').textContent = state.schedule.quietHours;
-
-  const testMode = Boolean(state.schedule.testMode);
-  const testButton = $('test-mode-toggle');
-  testButton.dataset.enabled = String(testMode);
-  testButton.setAttribute('aria-pressed', String(testMode));
-  testButton.textContent = testMode
-    ? '关闭测试模式'
-    : '测试模式';
-  const testModeHint = $('test-mode-hint');
-  if (testModeHint) testModeHint.textContent = testMode
-    ? '已忽略休眠时段'
-    : '临时忽略休眠时段';
-
-  const reloginStatus = state.wechat.reloginTestStatus || 'IDLE';
-  const reloginButton = $('force-relogin-test');
-  const reloginHint = $('force-relogin-hint');
-  const reloginRunning = reloginStatus === 'RUNNING';
-  reloginButton.disabled = androidActive
-    || reloginRunning
-    || state.wechat.adminMode !== 'RUNNING';
-  reloginButton.textContent = reloginRunning
-    ? '等待重新登录'
-    : '强制重登测试';
-  if (reloginHint) {
-    if (androidActive) {
-      reloginHint.textContent = 'Android Hook 不使用 Web 扫码重登测试';
-    } else if (reloginRunning) {
-      reloginHint.textContent = state.wechat.reloginTestDetail || '二维码将发送到飞书私聊';
-    } else if (reloginStatus === 'SUCCESS') {
-      reloginHint.textContent = `上次成功：${state.wechat.reloginTestDetail}`;
-    } else if (reloginStatus === 'FAILED') {
-      reloginHint.textContent = `上次失败：${state.wechat.reloginTestDetail}`;
-    }
-  }
 
   $('metrics').replaceChildren(...Object.entries(state.counters).map(([key, value]) => {
     const row = document.createElement('div');
@@ -671,28 +625,6 @@ $('pause-toggle').addEventListener('click', async () => {
   }
 });
 
-$('manual-offline-toggle').addEventListener('click', async () => {
-  const button = $('manual-offline-toggle');
-  const currentMode = button.dataset.mode || 'RUNNING';
-  const nextMode = currentMode === 'MANUAL_OFFLINE' ? 'RUNNING' : 'MANUAL_OFFLINE';
-  if (
-    nextMode === 'MANUAL_OFFLINE'
-    && !window.confirm(
-      '紧急离线会注销当前微信 Session，并停止自动重连和飞书二维码通知。恢复时需要重新扫码。\n\nEmergency offline logs out WeChat and suppresses reconnect/QR alerts. A new scan is required to resume.\n\n确认继续 / Continue?',
-    )
-  ) return;
-
-  button.disabled = true;
-  try {
-    await setAdminMode(nextMode);
-  } catch (error) {
-    const offlineHint2 = $('manual-offline-hint');
-    if (offlineHint2) offlineHint2.textContent = `切换失败 / Failed：${error.message}`;
-  } finally {
-    button.disabled = false;
-  }
-});
-
 // ── 群聊接收模式切换弹窗（2026-08-07）──
 const MODE_LABELS = { MENTION_ONLY: '艾特回复', OBSERVE: '仅接收不回复', OFF: '不接收' };
 const statusModal = $('group-status-modal');
@@ -749,79 +681,6 @@ $('group-status-modal-confirm').addEventListener('click', async () => {
   } catch (error) {
     $('group-status-modal-group').textContent = `切换失败 / Failed：${error.message}`;
   } finally {
-    button.disabled = false;
-  }
-});
-
-$('test-mode-toggle').addEventListener('click', async () => {
-  const button = $('test-mode-toggle');
-  const enabled = button.dataset.enabled === 'true';
-  button.disabled = true;
-  try {
-    const response = await fetch('/api/test-mode', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-FEAGLE-Dashboard': '1',
-      },
-      body: JSON.stringify({ enabled: !enabled }),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '切换失败 / Toggle failed');
-    render(payload);
-  } catch (error) {
-    const testModeHint2 = $('test-mode-hint');
-    if (testModeHint2) testModeHint2.textContent = `切换失败 / Failed：${error.message}`;
-  } finally {
-    button.disabled = false;
-  }
-});
-
-$('notification-test').addEventListener('click', async () => {
-  const button = $('notification-test');
-  const hint = $('notification-test-hint');
-  button.disabled = true;
-  if (hint) hint.textContent = '正在发送 / Sending...';
-  try {
-    const response = await fetch('/api/notifications/test', {
-      method: 'POST',
-      headers: { 'X-FEAGLE-Dashboard': '1' },
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '发送失败 / Send failed');
-    render(payload);
-    if (hint) hint.textContent = '已发送，请检查飞书';
-  } catch (error) {
-    if (hint) hint.textContent = `发送失败 / Failed：${error.message}`;
-  } finally {
-    button.disabled = false;
-  }
-});
-
-$('force-relogin-test').addEventListener('click', async () => {
-  const button = $('force-relogin-test');
-  const hint = $('force-relogin-hint');
-  const confirmed = window.confirm(
-    '该测试会注销当前微信 Session，推送一次二维码并等待重新登录。\n\nThis test logs out WeChat, sends one QR and waits for login.\n\n确认开始 / Start test?',
-  );
-  if (!confirmed) return;
-
-  button.disabled = true;
-  if (hint) hint.textContent = '正在注销并生成二维码 / Logging out and generating QR...';
-  try {
-    const response = await fetch('/api/wechat/force-relogin', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-FEAGLE-Dashboard': '1',
-      },
-      body: JSON.stringify({ confirm: 'FORCE_LOGOUT' }),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '测试启动失败 / Test failed');
-    render(payload);
-  } catch (error) {
-    hint.textContent = `启动失败 / Failed：${error.message}`;
     button.disabled = false;
   }
 });
