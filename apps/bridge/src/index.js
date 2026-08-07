@@ -50,6 +50,7 @@ let savedControl = {
   groupAllowlist: [],
   groupBlockedTerms: [],
   groupModes: {},
+  selfAvatar: null,
   changedAt: '',
 };
 try {
@@ -67,6 +68,9 @@ state.patch('groupChat', {
   blockedTerms: savedControl.groupBlockedTerms,
   groupModes: savedControl.groupModes,
 });
+if (savedControl.selfAvatar) {
+  state.setSelfAvatar(savedControl.selfAvatar);
+}
 const quietRange = parseQuietHours(settings.quietHours);
 const timezone = settings.timezone;
 state.patch('schedule', {
@@ -222,6 +226,13 @@ const commonWechatOptions = {
   onGroupText: async (message) => onebot.sendGroupText(message),
   onPrivateImage: async (message) => onebot.sendPrivateImage(message),
   onGroupImage: async (message) => onebot.sendGroupImage(message),
+  onSelfAvatar: async (message) => {
+    try {
+      controlStore.saveSelfAvatar(message);
+    } catch (error) {
+      state.addError('control-state-self-avatar', error);
+    }
+  },
   initialGroupChatMode: savedControl.groupChatMode,
   initialGroupAllowlist: savedControl.groupAllowlist,
   initialGroupBlockedTerms: savedControl.groupBlockedTerms,

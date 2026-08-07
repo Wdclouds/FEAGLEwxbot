@@ -26,6 +26,21 @@ export function normalizeWechatAdminMode(value) {
   return VALID_MODES.has(mode) ? mode : WECHAT_ADMIN_MODES.RUNNING;
 }
 
+/** 校验并规整 bot 自身头像缓存（协议 9 / self_avatar），缺字段返回 null。 */
+export function normalizeSelfAvatar(value) {
+  if (!value || typeof value !== 'object') return null;
+  const wxid = String(value.wxid || '').trim();
+  const avatarBase64 = String(value.avatarBase64 || '');
+  if (!wxid || !avatarBase64) return null;
+  return {
+    wxid,
+    nickname: String(value.nickname || '').slice(0, 80),
+    avatarBase64,
+    avatarSize: Number(value.avatarSize || 0),
+    updatedAt: String(value.updatedAt || ''),
+  };
+}
+
 export class PersistentControlState {
   constructor({
     path = '/app/data/control-state.json',
@@ -43,6 +58,7 @@ export class PersistentControlState {
         groupAllowlist: [],
         groupBlockedTerms: [],
         groupModes: {},
+        selfAvatar: null,
         changedAt: '',
       };
     }
@@ -61,6 +77,7 @@ export class PersistentControlState {
       groupAllowlist: normalizeGroupAllowlist(stored?.groupAllowlist),
       groupBlockedTerms: normalizeBlockedTerms(stored?.groupBlockedTerms),
       groupModes,
+      selfAvatar: normalizeSelfAvatar(stored?.selfAvatar),
       changedAt: String(stored?.changedAt || ''),
     };
   }
@@ -110,9 +127,22 @@ export class PersistentControlState {
     });
   }
 
+  saveSelfAvatar(avatarData) {
+    const selfAvatar = normalizeSelfAvatar(avatarData);
+    if (!selfAvatar) {
+      throw new TypeError('selfAvatar requires wxid and avatarBase64');
+    }
+    const current = this.load();
+    return this.write({
+      ...current,
+      selfAvatar,
+      changedAt: new Date(this.now()).toISOString(),
+    });
+  }
+
   write(values) {
     const snapshot = {
-      version: 4,
+      version: 5,
       wechatAdminMode: normalizeWechatAdminMode(values.wechatAdminMode),
       groupChatMode: normalizeGroupChatMode(values.groupChatMode),
       groupAllowlist: normalizeGroupAllowlist(values.groupAllowlist),
@@ -120,6 +150,7 @@ export class PersistentControlState {
       groupModes: values.groupModes && typeof values.groupModes === 'object'
         ? values.groupModes
         : {},
+      selfAvatar: normalizeSelfAvatar(values.selfAvatar),
       changedAt: String(values.changedAt || new Date(this.now()).toISOString()),
     };
     mkdirSync(dirname(this.path), { recursive: true });

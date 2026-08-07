@@ -96,6 +96,7 @@ export class AndroidWechatClient {
     onGroupText = async () => {},
     onPrivateImage = async () => {},
     onGroupImage = async () => {},
+    onSelfAvatar = async () => {},
     host = process.env.ANDROID_WS_HOST || '0.0.0.0',
     port = positiveInteger(process.env.ANDROID_WS_PORT, 6191),
     path = process.env.ANDROID_WS_PATH || '/android',
@@ -145,6 +146,7 @@ export class AndroidWechatClient {
     this.onGroupText = onGroupText;
     this.onPrivateImage = onPrivateImage;
     this.onGroupImage = onGroupImage;
+    this.onSelfAvatar = onSelfAvatar;
     this.host = host;
     this.port = port;
     this.path = path.startsWith('/') ? path : `/${path}`;
@@ -356,6 +358,7 @@ export class AndroidWechatClient {
         break;
       case 'self_avatar':
         this.state.setSelfAvatar(message);
+        await this.onSelfAvatar?.(message);
         break;
       case 'command_result':
         this.handleCommandResult(message);
