@@ -42,15 +42,25 @@ export class PersistentControlState {
         groupChatMode: GROUP_CHAT_MODES.OFF,
         groupAllowlist: [],
         groupBlockedTerms: [],
+        groupModes: {},
         changedAt: '',
       };
     }
     const stored = JSON.parse(readFileSync(this.path, 'utf8'));
+    const storedModes = stored?.groupModes && typeof stored.groupModes === 'object'
+      ? stored.groupModes
+      : {};
+    const groupModes = {};
+    for (const [groupId, mode] of Object.entries(storedModes)) {
+      const normalized = normalizeGroupChatMode(mode);
+      if (normalized) groupModes[String(groupId)] = normalized;
+    }
     return {
       wechatAdminMode: normalizeWechatAdminMode(stored?.wechatAdminMode),
       groupChatMode: normalizeGroupChatMode(stored?.groupChatMode),
       groupAllowlist: normalizeGroupAllowlist(stored?.groupAllowlist),
       groupBlockedTerms: normalizeBlockedTerms(stored?.groupBlockedTerms),
+      groupModes,
       changedAt: String(stored?.changedAt || ''),
     };
   }
@@ -85,13 +95,31 @@ export class PersistentControlState {
     });
   }
 
+  saveGroupMode(groupId, groupMode) {
+    const gid = String(groupId || '').trim();
+    const mode = normalizeGroupChatMode(groupMode);
+    if (!gid) throw new TypeError('groupId is required');
+    if (mode !== groupMode) {
+      throw new TypeError(`Unsupported group chat mode: ${groupMode}`);
+    }
+    const current = this.load();
+    return this.write({
+      ...current,
+      groupModes: { ...current.groupModes, [gid]: mode },
+      changedAt: new Date(this.now()).toISOString(),
+    });
+  }
+
   write(values) {
     const snapshot = {
-      version: 3,
+      version: 4,
       wechatAdminMode: normalizeWechatAdminMode(values.wechatAdminMode),
       groupChatMode: normalizeGroupChatMode(values.groupChatMode),
       groupAllowlist: normalizeGroupAllowlist(values.groupAllowlist),
       groupBlockedTerms: normalizeBlockedTerms(values.groupBlockedTerms),
+      groupModes: values.groupModes && typeof values.groupModes === 'object'
+        ? values.groupModes
+        : {},
       changedAt: String(values.changedAt || new Date(this.now()).toISOString()),
     };
     mkdirSync(dirname(this.path), { recursive: true });

@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { pushLog } from './terminal-log.js';
 
 export class AstrBotSupervisor {
   constructor({ state }) {
@@ -91,6 +92,7 @@ export class AstrBotSupervisor {
       const output = `[AstrBot] ${line}`;
       if (isError) console.error(output);
       else console.log(output);
+      pushLog(isError ? 'ERROR' : 'INFO', line);
       if (/adapter.*connected|适配器已连接/i.test(line)) {
         this.state.patch('astrbot', {
           status: 'READY',

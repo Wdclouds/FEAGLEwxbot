@@ -1,6 +1,7 @@
 import { createReadStream, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
+import { subscribeLogs, tailLogs } from './terminal-log.js';
 
 const CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -25,6 +26,7 @@ export class DashboardServer {
     forceWechatRelogin = async () => state.snapshot(),
     setWechatAdminMode = async () => state.snapshot(),
     setGroupChatConfig = async () => state.snapshot(),
+    setGroupChatMode = async () => state.snapshot(),
     getBridgeSettings = () => ({}),
     saveBridgeSettings = async () => ({}),
     switchTransport = async () => ({}),
@@ -38,6 +40,7 @@ export class DashboardServer {
     this.forceWechatRelogin = forceWechatRelogin;
     this.setWechatAdminMode = setWechatAdminMode;
     this.setGroupChatConfig = setGroupChatConfig;
+    this.setGroupChatMode = setGroupChatMode;
     this.getBridgeSettings = getBridgeSettings;
     this.saveBridgeSettings = saveBridgeSettings;
     this.switchTransport = switchTransport;
@@ -459,6 +462,69 @@ export class DashboardServer {
       return;
     }
 
+    // ---- POST /api/group-chat/status（切换单个群的接收模式）----
+    if (url.pathname === '/api/group-chat/status') {
+      if (request.method !== 'POST') {
+        response.writeHead(405, {
+          Allow: 'POST',
+          'Content-Type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+      }
+      if (!this.authorizeMutation(request, response)) return;
+      if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
+        response.writeHead(415, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+        return;
+      }
+      let body = '';
+      request.setEncoding('utf8');
+      request.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 8_192) request.destroy();
+      });
+      request.on('end', () => {
+        let payload;
+        try {
+          payload = JSON.parse(body);
+        } catch {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Invalid JSON body' }));
+          return;
+        }
+        const groupId = String(payload.groupId || '').trim();
+        if (!GROUP_CHAT_MODES.has(payload.mode)) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'Unsupported group chat mode' }));
+          return;
+        }
+        if (!groupId) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ error: 'groupId is required' }));
+          return;
+        }
+        Promise.resolve(this.setGroupChatMode(groupId, payload.mode))
+          .then((snapshot) => {
+            response.writeHead(200, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify(snapshot));
+          })
+          .catch((error) => {
+            response.writeHead(409, {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            });
+            response.end(JSON.stringify({
+              error: String(error?.message || error).slice(0, 200),
+            }));
+          });
+      });
+      return;
+    }
+
     if (url.pathname === '/api/status') {
       response.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
@@ -478,6 +544,26 @@ export class DashboardServer {
       response.write(`data: ${JSON.stringify(this.state.snapshot())}\n\n`);
       this.clients.add(response);
       request.on('close', () => this.clients.delete(response));
+      return;
+    }
+
+    // ---- GET /logs（终端日志 SSE：先发环形缓冲尾部，再推增量）----
+    if (url.pathname === '/logs') {
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+      for (const line of tailLogs(200)) {
+        response.write(`data: ${line}\n\n`);
+      }
+      const unsubscribe = subscribeLogs((line) => {
+        response.write(`data: ${line}\n\n`);
+      });
+      request.on('close', () => {
+        unsubscribe();
+      });
       return;
     }
 

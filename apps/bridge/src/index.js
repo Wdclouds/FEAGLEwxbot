@@ -49,6 +49,7 @@ let savedControl = {
   groupChatMode: GROUP_CHAT_MODES.OFF,
   groupAllowlist: [],
   groupBlockedTerms: [],
+  groupModes: {},
   changedAt: '',
 };
 try {
@@ -64,6 +65,7 @@ state.patch('groupChat', {
   mode: savedControl.groupChatMode,
   allowlist: savedControl.groupAllowlist,
   blockedTerms: savedControl.groupBlockedTerms,
+  groupModes: savedControl.groupModes,
 });
 const quietRange = parseQuietHours(settings.quietHours);
 const timezone = settings.timezone;
@@ -129,6 +131,11 @@ const dashboard = new DashboardServer({
   setGroupChatConfig: async (mode, allowlist, blockedTerms) => {
     controlStore.saveGroupChatConfig(mode, allowlist, blockedTerms);
     return wechat.setGroupChatConfig(mode, allowlist, blockedTerms);
+  },
+  setGroupChatMode: async (groupId, mode) => {
+    controlStore.saveGroupMode(groupId, mode);
+    state.setGroupMode(groupId, mode);
+    return state.snapshot();
   },
   getBridgeSettings: () => settingsStore.snapshot(),
   saveBridgeSettings: (changes) => {

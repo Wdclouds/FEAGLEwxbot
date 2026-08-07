@@ -66,6 +66,7 @@ export class RuntimeState extends EventEmitter {
       mode: 'OFF',
       allowlist: [],
       blockedTerms: [],
+      groupModes: {},
       discovered: [],
       fuses: [],
       jitterMinMs: 1_000,
@@ -138,6 +139,7 @@ export class RuntimeState extends EventEmitter {
       name: String(group?.name || '微信群').slice(0, 80),
       memberCount: Number(group?.memberCount || 0),
       lastSeenAt: new Date().toISOString(),
+      mode: this.groupChat.groupModes[String(group?.groupId || '')] || this.groupChat.mode,
     };
     if (!normalized.groupId) return;
     const discovered = this.groupChat.discovered
@@ -145,6 +147,17 @@ export class RuntimeState extends EventEmitter {
     discovered.unshift(normalized);
     this.groupChat.discovered = discovered.slice(0, 50);
     this.groupChat.lastMessageAt = normalized.lastSeenAt;
+    this.broadcast();
+  }
+
+  /** 切换单个群的接收模式（MENTION_ONLY / OBSERVE / OFF），缺省跟随全局 mode */
+  setGroupMode(groupId, mode) {
+    const gid = String(groupId || '');
+    if (!gid) return;
+    this.groupChat.groupModes[gid] = mode;
+    this.groupChat.discovered = this.groupChat.discovered.map((group) => (
+      group.groupId === gid ? { ...group, mode } : group
+    ));
     this.broadcast();
   }
 
