@@ -177,6 +177,11 @@ public final class WechatHook implements IXposedHookLoadPackage {
         if (imgPathValue == null || imgPathValue.isEmpty()) {
             return;
         }
+        // wxgf 原图已发（双 hook 同消息）——跳过缩略图避免重复推送
+        if (wxgfAlreadySent(msgSvrId)) {
+            log("wxgf dedup skip thumb svrId=" + msgSvrId);
+            return;
+        }
         boolean group = talker != null
                 && talker.toLowerCase(Locale.ROOT).endsWith("@chatroom");
         // 群图 sender 解析：8.0.70 群图片 content 形如 "发送者wxid:"
@@ -350,6 +355,67 @@ public final class WechatHook implements IXposedHookLoadPackage {
             int messageType, String eventId, String talker, String sender,
             String imageBase64, String mime, int size,
             long createTime, long msgId, long msgSvrId) {
+        sendImageToAgent(messageType, eventId, talker, sender,
+                imageBase64, mime, size, createTime, msgId, msgSvrId, "");
+    }
+
+    /** wxgf 原图已发消息集合（msgSvrId）——双 hook 同消息会同时触发
+     *  wxgf 链路和缩略图链路，用此集合阻止同消息的缩略图重复推送。 */
+    private static final java.util.Set<Long> WXGF_SENT =
+            java.util.Collections.newSetFromMap(
+                    new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
+
+    /** 同消息缩略图去重：msgSvrId 已走 wxgf 原图链路则跳过缩略图。 */
+    static boolean wxgfAlreadySent(long msgSvrId) {
+        if (msgSvrId > 0 && WXGF_SENT.contains(msgSvrId)) {
+            return true;
+        }
+        if (WXGF_SENT.size() > 2000) {
+            WXGF_SENT.clear();
+        }
+        return false;
+    }
+
+    /** wxgf 原图链路：读文件字节（纯 IO，零像素操作）→ base64 → Agent →
+     *  服务器 ffmpeg 解码（根治微信进程内 compress/getPixels 挂起）。 */
+    static void sendWxgfToAgent(
+            int messageType, String eventId, String talker,
+            String contentValue, java.io.File wxgf,
+            long createTime, long msgId, long msgSvrId) {
+        boolean group = talker != null
+                && talker.toLowerCase(Locale.ROOT).endsWith("@chatroom");
+        final String sender = group ? parseImageSender(contentValue) : "";
+        if (msgSvrId > 0) {
+            WXGF_SENT.add(msgSvrId);
+        }
+        try {
+            byte[] data = new byte[(int) wxgf.length()];
+            java.io.FileInputStream fis = new java.io.FileInputStream(wxgf);
+            int off = 0;
+            while (off < data.length) {
+                int r = fis.read(data, off, data.length - off);
+                if (r < 0) {
+                    break;
+                }
+                off += r;
+            }
+            fis.close();
+            String b64 = android.util.Base64.encodeToString(
+                    data, android.util.Base64.NO_WRAP);
+            sendImageToAgent(messageType, eventId, talker, sender,
+                    b64, "image/wxgf", data.length,
+                    createTime, msgId, msgSvrId, "wxgf");
+            log("wxgf forwarded type=" + messageType
+                    + " bytes=" + data.length + " b64len=" + b64.length());
+        } catch (Throwable error) {
+            logError("wxgf forward failed", error);
+        }
+    }
+
+    private static void sendImageToAgent(
+            int messageType, String eventId, String talker, String sender,
+            String imageBase64, String mime, int size,
+            long createTime, long msgId, long msgSvrId, String imageFormat) {
         if (agentMessenger == null) {
             return;
         }
@@ -365,6 +431,9 @@ public final class WechatHook implements IXposedHookLoadPackage {
             data.putLong("create_time", createTime);
             data.putLong("msg_id", msgId);
             data.putLong("msg_svr_id", msgSvrId);
+            if (imageFormat != null && !imageFormat.isEmpty()) {
+                data.putString("image_format", imageFormat);
+            }
             outbound.setData(data);
             sendToAgent(outbound);
         } catch (Throwable error) {
@@ -708,6 +777,11 @@ public final class WechatHook implements IXposedHookLoadPackage {
         if (imageFile == null || !imageFile.isFile()) {
             return;
         }
+        // wxgf 原图已发（双 hook 同消息）——跳过文件兜底避免重复推送
+        if (wxgfAlreadySent(msgSvrId)) {
+            log("wxgf dedup skip file svrId=" + msgSvrId);
+            return;
+        }
         boolean group = talker != null
                 && talker.toLowerCase(Locale.ROOT).endsWith("@chatroom");
         final String sender = group ? parseImageSender(contentValue) : "";
@@ -757,6 +831,11 @@ public final class WechatHook implements IXposedHookLoadPackage {
             long msgId,
             long msgSvrId) {
         if (bitmap == null) {
+            return;
+        }
+        // wxgf 原图已发（双 hook 同消息）——跳过 Bitmap 兜底避免重复推送
+        if (wxgfAlreadySent(msgSvrId)) {
+            log("wxgf dedup skip bmp svrId=" + msgSvrId);
             return;
         }
         boolean group = talker != null

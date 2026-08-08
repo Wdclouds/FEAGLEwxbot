@@ -343,48 +343,41 @@ final class Wechat8070Adapter {
                         if (original != null && original.isFile()
                                 && original.length() > 0) {
                             // wxgf = 微信 HEVC 私有格式（文件头 wxgf），
-                            // BitmapFactory 解不了——用微信解码器解成 Bitmap
-                            java.io.File usable = original;
+                            // 微信进程内解码+压缩不可靠（WXGF JNI 破坏 native
+                            // 状态，compress/getPixels 实测随机挂起）——
+                            // 新链路：读字节 → Agent → 服务器 ffmpeg 解码
+                            // （微信进程零像素操作，根治挂起）
+                            boolean isWxgf = false;
                             try {
                                 byte[] head = new byte[4];
                                 java.io.FileInputStream fis =
                                         new java.io.FileInputStream(original);
-                                int read = fis.read(head);
+                                int hr = fis.read(head);
                                 fis.close();
-                                if (read == 4
+                                isWxgf = hr == 4
                                         && head[0] == 'w' && head[1] == 'x'
-                                        && head[2] == 'g' && head[3] == 'f') {
-                                    WechatHook.logAdapterInfo(
-                                            "[ORIG] wxgf detected, decoding");
-                                    android.graphics.Bitmap bmp =
-                                            decodeWxgfToBitmap(original);
-                                    if (bmp != null) {
-                                        try {
-                                            WechatHook.captureImageFromBitmap(
-                                                    srcTag, bmp,
-                                                    WXGF_W, WXGF_H,
-                                                    tRef, cRef,
-                                                    ctRef, miRef, msRef);
-                                            WechatHook.logAdapterInfo(
-                                                    "[ORIG] bitmap dispatched "
-                                                            + WXGF_W + "x"
-                                                            + WXGF_H);
-                                        } catch (Throwable error) {
-                                            WechatHook.logAdapterError(
-                                                    "[ORIG] bitmap dispatch throw",
-                                                    error);
-                                        }
-                                        return;
-                                    }
-                                    WechatHook.logAdapterInfo(
-                                            "[ORIG] wxgf decode failed");
-                                }
+                                        && head[2] == 'g' && head[3] == 'f';
                             } catch (Throwable ignored) {
                             }
+                            if (isWxgf) {
+                                WechatHook.logAdapterInfo(
+                                        "[ORIG] wxgf detected, server decode");
+                                boolean grp = tRef != null
+                                        && tRef.toLowerCase(
+                                                java.util.Locale.ROOT)
+                                                .endsWith("@chatroom");
+                                WechatHook.sendWxgfToAgent(
+                                        grp ? AgentProtocol.MSG_GROUP_IMAGE
+                                                : AgentProtocol.MSG_PRIVATE_IMAGE,
+                                        "wxgf:" + msRef, tRef, cRef,
+                                        original, ctRef, miRef, msRef);
+                                return;
+                            }
+                            // 非 wxgf（异常情况）——旧链路压缩兜底
                             WechatHook.logAdapterInfo("[ORIG] original ok size="
-                                    + usable.length());
+                                    + original.length());
                             WechatHook.captureImageFromFile(
-                                    srcTag, usable, tRef, cRef,
+                                    srcTag, original, tRef, cRef,
                                     ctRef, miRef, msRef);
                         } else {
                             WechatHook.captureImage(

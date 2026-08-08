@@ -93,10 +93,12 @@ public final class BridgeForegroundService extends Service {
 
         startForeground(NOTIFICATION_ID, notification("正在启动 / starting"));
         if (running.compareAndSet(false, true)) {
+            Log.i(TAG, "onStartCommand first-run, connecting");
             setStatus("正在连接 / connecting");
             mainHandler.post(heartbeat);
             connect();
         } else {
+            Log.i(TAG, "onStartCommand re-run, reconnecting");
             setStatus("正在重新连接 / reconnecting");
             mainHandler.removeCallbacks(reconnect);
             mainHandler.post(this::connect);
@@ -179,6 +181,7 @@ public final class BridgeForegroundService extends Service {
         String talker = data.getString("talker", "").trim();
         String sender = data.getString("sender", "").trim();
         String imageBase64 = data.getString("image_base64", "");
+        String imageFormat = data.getString("image_format", "");
         // 群聊图片的 sender 解析尚未实现（Hook 暂传空），先静默丢弃，
         // 待群聊图片策略确定后补齐（MENTION_ONLY / 白名单 / sender 提取）。
         if (sender.isEmpty()) {
@@ -197,6 +200,9 @@ public final class BridgeForegroundService extends Service {
         put(event, "sender", sender);
         put(event, "imageBase64", imageBase64);
         put(event, "mime", data.getString("mime", "image/jpeg"));
+        if (!imageFormat.isEmpty()) {
+            put(event, "imageFormat", imageFormat);
+        }
         put(event, "imageSize", data.getInt("image_size", 0));
         put(event, "createTime", data.getLong("create_time", 0));
         put(event, "msgId", data.getLong("msg_id", 0));
@@ -210,6 +216,7 @@ public final class BridgeForegroundService extends Service {
         String talker = data.getString("talker", "").trim();
         String displayName = data.getString("display_name", "").trim();
         String imageBase64 = data.getString("image_base64", "");
+        String imageFormat = data.getString("image_format", "");
         if (eventId.isEmpty() || !validPrivateTalker(talker)
                 || imageBase64.isEmpty() || imageBase64.length() > 7 * 1024 * 1024) {
             return;
@@ -222,6 +229,9 @@ public final class BridgeForegroundService extends Service {
         put(event, "displayName", displayName);
         put(event, "imageBase64", imageBase64);
         put(event, "mime", data.getString("mime", "image/jpeg"));
+        if (!imageFormat.isEmpty()) {
+            put(event, "imageFormat", imageFormat);
+        }
         put(event, "imageSize", data.getInt("image_size", 0));
         put(event, "createTime", data.getLong("create_time", 0));
         put(event, "msgId", data.getLong("msg_id", 0));
@@ -365,6 +375,8 @@ public final class BridgeForegroundService extends Service {
 
     private void connect() {
         if (!running.get()) return;
+        Log.i(TAG, "connect() endpoint="
+                + prefs.getString(AgentProtocol.KEY_ENDPOINT, ""));
         String endpoint = prefs.getString(AgentProtocol.KEY_ENDPOINT, "").trim();
         if (!validEndpoint(endpoint)) {
             setStatus("地址无效 / invalid endpoint");
@@ -391,6 +403,7 @@ public final class BridgeForegroundService extends Service {
                     new Draft_6455(), headers, 20_000) {
                 @Override
                 public void onOpen(ServerHandshake handshake) {
+                    Log.i(TAG, "WebSocket onOpen");
                     mainHandler.post(() -> {
                         if (BridgeForegroundService.this.socket != this) return;
                         reconnectAttempt = 0;
@@ -427,6 +440,8 @@ public final class BridgeForegroundService extends Service {
 
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
+                    Log.w(TAG, "WebSocket onClose code=" + code
+                            + " reason=" + reason);
                     mainHandler.post(() -> {
                         if (BridgeForegroundService.this.socket != this) return;
                         BridgeForegroundService.this.socket = null;
@@ -741,10 +756,9 @@ public final class BridgeForegroundService extends Service {
             if (!"ws".equalsIgnoreCase(scheme)) return false;
 
             String lowerHost = host.toLowerCase(Locale.ROOT);
-            return "127.0.0.1".equals(lowerHost)
-                    || "localhost".equals(lowerHost)
-                    || "::1".equals(lowerHost)
-                    || isTailscaleIpv4(lowerHost);
+            // 2026-08-08：放宽——endpoint 来自本地配置（prefs），
+            // 允许任意主机（公网 IP / 域名 / Tailscale IP / localhost）。
+            return !lowerHost.isEmpty();
         } catch (IllegalArgumentException error) {
             return false;
         }
