@@ -694,6 +694,158 @@ public final class WechatHook implements IXposedHookLoadPackage {
                 && normalized.length() <= 256;
     }
 
+    /** 原图链路用：从已落盘文件直接捕获图片（2026-08-08）：
+     *  压缩 JPEG（1024px/q72）→ base64 → 协议 7/8 上报。
+     *  与 captureImage 同链路，仅文件来源不同（原图 vs 缩略图）。 */
+    static void captureImageFromFile(
+            String source,
+            java.io.File imageFile,
+            String talker,
+            String contentValue,
+            long createTime,
+            long msgId,
+            long msgSvrId) {
+        if (imageFile == null || !imageFile.isFile()) {
+            return;
+        }
+        boolean group = talker != null
+                && talker.toLowerCase(Locale.ROOT).endsWith("@chatroom");
+        final String sender = group ? parseImageSender(contentValue) : "";
+        String eventId = eventId(
+                talker, "image:" + imageFile.getName(), createTime, msgId, msgSvrId);
+        synchronized (recentEvents) {
+            if (recentEvents.containsKey(eventId)) {
+                return;
+            }
+            recentEvents.put(eventId, Boolean.TRUE);
+        }
+        final int messageType = group
+                ? AgentProtocol.MSG_GROUP_IMAGE : AgentProtocol.MSG_PRIVATE_IMAGE;
+        Thread worker = new Thread(() -> {
+            try {
+                byte[] jpeg = compressToJpeg(imageFile, 1024, 72);
+                if (jpeg == null || jpeg.length == 0) {
+                    log("image compress failed file=" + imageFile.getName());
+                    return;
+                }
+                String b64 = android.util.Base64.encodeToString(
+                        jpeg, android.util.Base64.NO_WRAP);
+                sendImageToAgent(
+                        messageType, eventId, talker, sender, b64, "image/jpeg",
+                        jpeg.length, createTime, msgId, msgSvrId);
+                log("image forwarded type=" + messageType
+                        + " bytes=" + jpeg.length + " b64len=" + b64.length()
+                        + " orig=1");
+            } catch (Throwable error) {
+                logError("image capture worker failed", error);
+            }
+        }, "feagle-img");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** WXGF 原图解码链路用：Bitmap 直接压缩 JPEG → base64 → 协议 7/8 上报。
+     *  与 captureImageFromFile 同链路，仅输入是 Bitmap（wxgf 解码结果）。 */
+    static void captureImageFromBitmap(
+            String source,
+            android.graphics.Bitmap bitmap,
+            int bw,
+            int bh,
+            String talker,
+            String contentValue,
+            long createTime,
+            long msgId,
+            long msgSvrId) {
+        if (bitmap == null) {
+            return;
+        }
+        boolean group = talker != null
+                && talker.toLowerCase(Locale.ROOT).endsWith("@chatroom");
+        final String sender = group ? parseImageSender(contentValue) : "";
+        // 宽高由调用方传入（decode 时已知），不访问 bitmap 方法——
+        // 2026-08-08 实测：copy 后 getWidth 偶发挂起（微信 native 引用竞争）
+        String eventId = eventId(
+                talker, "image:wxgf:" + bw + "x" + bh,
+                createTime, msgId, msgSvrId);
+        if (!dedupEvent(eventId)) {
+            return;
+        }
+        final int messageType = group
+                ? AgentProtocol.MSG_GROUP_IMAGE : AgentProtocol.MSG_PRIVATE_IMAGE;
+        // Grok 方案（2026-08-08）：320px 小尺寸 + JPEG q60 + 直接写文件；
+        // 全程不访问 bitmap 方法（getWidth 偶发挂起），宽高由调用方传入
+        try {
+            int maxEdge = 320;
+            int w = bw;
+            int h = bh;
+            float scale = Math.max(w, h) > maxEdge
+                    ? (float) maxEdge / Math.max(w, h) : 1f;
+            android.graphics.Bitmap scaled = bitmap;
+            if (scale < 1f) {
+                scaled = android.graphics.Bitmap.createScaledBitmap(
+                        bitmap,
+                        Math.max(1, (int) (w * scale)),
+                        Math.max(1, (int) (h * scale)), false);
+            }
+            java.io.File tmp = new java.io.File(
+                    appContext().getCacheDir(),
+                    "wx_" + System.currentTimeMillis() + ".jpg");
+            java.io.FileOutputStream fos =
+                    new java.io.FileOutputStream(tmp);
+            boolean ok = scaled.compress(
+                    android.graphics.Bitmap.CompressFormat.JPEG,
+                    60, fos);
+            fos.close();
+            if (scale < 1f && scaled != bitmap) {
+                scaled.recycle();
+            }
+            if (!ok || tmp.length() == 0) {
+                log("bitmap compress failed ok=" + ok);
+                return;
+            }
+            byte[] jpeg = new byte[(int) tmp.length()];
+            java.io.FileInputStream fis = new java.io.FileInputStream(tmp);
+            int off = 0;
+            while (off < jpeg.length) {
+                int r = fis.read(jpeg, off, jpeg.length - off);
+                if (r < 0) {
+                    break;
+                }
+                off += r;
+            }
+            fis.close();
+            try {
+                tmp.delete();
+            } catch (Throwable ignored) {
+            }
+            String b64 = android.util.Base64.encodeToString(
+                    jpeg, android.util.Base64.NO_WRAP);
+            sendImageToAgent(
+                    messageType, eventId, talker, sender, b64, "image/jpeg",
+                    jpeg.length, createTime, msgId, msgSvrId);
+            log("image forwarded type=" + messageType
+                    + " bytes=" + jpeg.length + " b64len=" + b64.length()
+                    + " orig=wxgf");
+        } catch (Throwable error) {
+            logError("bitmap capture sync failed", error);
+        }
+    }
+
+    private static boolean dedupEvent(String eventId) {
+        synchronized (recentEvents) {
+            if (recentEvents.containsKey(eventId)) {
+                return false;
+            }
+            recentEvents.put(eventId, Boolean.TRUE);
+            return true;
+        }
+    }
+
+    /** Adapter 访问微信 Context（原图下载轮询目录用）。 */
+    static android.content.Context appContext() {
+        return appContext;
+    }
+
     private static String installedWechatVersion() {
         try {
             String version = appContext.getPackageManager()
