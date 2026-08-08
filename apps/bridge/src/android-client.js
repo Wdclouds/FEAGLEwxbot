@@ -585,28 +585,44 @@ export class AndroidWechatClient {
   }
 
   /** wxgf（微信 HEVC 私有格式）→ JPEG：ffmpeg 解码。
-   *  返回 base64 JPEG；失败返回 null。 */
+   *  返回 base64 JPEG；失败返回 null。
+   *  ffmpeg 串行化（decodeChain 链）——并发解码大图可能 OOM（容器内存限制）。 */
   async decodeWxgfToJpeg(imageBase64) {
-    if (!imageBase64 || imageBase64.length === 0) return null;
-    const tmpIn = `/tmp/wxgf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wxgf`;
-    const tmpOut = `${tmpIn}.jpg`;
-    try {
-      await fs.writeFile(tmpIn, Buffer.from(imageBase64, 'base64'));
-      await execFile('ffmpeg', [
-        '-y', '-i', tmpIn,
-        '-frames:v', '1', '-update', '1',
-        '-q:v', '5',
-        tmpOut,
-      ], { timeout: 15_000 });
-      const jpeg = await fs.readFile(tmpOut);
-      return jpeg.toString('base64');
-    } catch (error) {
-      console.error('[wxgf-decode] failed:', error?.message || error);
-      return null;
-    } finally {
-      await fs.unlink(tmpIn).catch(() => {});
-      await fs.unlink(tmpOut).catch(() => {});
-    }
+    const run = async () => {
+      if (!imageBase64 || imageBase64.length === 0) return null;
+      const tmpIn = `/tmp/wxgf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wxgf`;
+      const tmpOut = `${tmpIn}.jpg`;
+      try {
+        await fs.writeFile(tmpIn, Buffer.from(imageBase64, 'base64'));
+        await new Promise((resolve, reject) => {
+          execFile('ffmpeg', [
+            '-y', '-threads', '1', '-i', tmpIn,
+            '-frames:v', '1', '-update', '1',
+            '-q:v', '5',
+            tmpOut,
+          ], { timeout: 30_000 }, (error) => {
+            if (error) {
+              error.ffmpegStderr = error.stderr || '';
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+        const jpeg = await fs.readFile(tmpOut);
+        return jpeg.toString('base64');
+      } catch (error) {
+        console.error('[wxgf-decode] failed:', error?.message || error,
+          '| ffmpeg stderr:', (error?.ffmpegStderr || '').slice(0, 300));
+        return null;
+      } finally {
+        await fs.unlink(tmpIn).catch(() => {});
+        await fs.unlink(tmpOut).catch(() => {});
+      }
+    };
+    const result = this.decodeChain = (this.decodeChain || Promise.resolve())
+      .then(run, run);
+    return result;
   }
 
   async handlePrivateImage(socket, message) {
