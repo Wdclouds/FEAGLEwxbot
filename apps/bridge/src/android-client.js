@@ -586,6 +586,33 @@ export class AndroidWechatClient {
 
   /** wxgf（微信 HEVC 私有格式）→ JPEG：ffmpeg 解码。
    *  返回 base64 JPEG；失败返回 null。
+   *  ffmpeg 串行化（decodeChain 链）——并发解码大图可能 OOM（容器内存限制）。
+   *  2026-08-08 实测：wxgf 有两种变体——A 型（干净 Annex-B HEVC，ffmpeg 直解）
+   *  B 型（含私有 NAL `00 00 00 01 f1` 前缀 + SEI 内嵌损坏 JPEG，ffmpeg 报
+   *  Invalid data）——剥离私有 NAL 后 B 型可解（实测 1280×2536 原图）。 */
+  stripWxgfPrivateNals(buf) {
+    const startCode = Buffer.from([0, 0, 0, 1]);
+    const chunks = [];
+    let i = 0;
+    while (i < buf.length) {
+      const j = buf.indexOf(startCode, i);
+      if (j < 0) {
+        chunks.push(buf.subarray(i));
+        break;
+      }
+      if (j + 4 < buf.length && buf[j + 4] === 0xf1) {
+        const k = buf.indexOf(startCode, j + 4);
+        i = k < 0 ? buf.length : k;
+        continue;
+      }
+      chunks.push(buf.subarray(i, j + 4));
+      i = j + 4;
+    }
+    return Buffer.concat(chunks);
+  }
+
+  /** wxgf（微信 HEVC 私有格式）→ JPEG：ffmpeg 解码。
+   *  返回 base64 JPEG；失败返回 null。
    *  ffmpeg 串行化（decodeChain 链）——并发解码大图可能 OOM（容器内存限制）。 */
   async decodeWxgfToJpeg(imageBase64) {
     const run = async () => {
@@ -593,7 +620,8 @@ export class AndroidWechatClient {
       const tmpIn = `/tmp/wxgf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wxgf`;
       const tmpOut = `${tmpIn}.jpg`;
       try {
-        await fs.writeFile(tmpIn, Buffer.from(imageBase64, 'base64'));
+        const raw = Buffer.from(imageBase64, 'base64');
+        await fs.writeFile(tmpIn, this.stripWxgfPrivateNals(raw));
         await new Promise((resolve, reject) => {
           execFile('ffmpeg', [
             '-y', '-threads', '1', '-i', tmpIn,
