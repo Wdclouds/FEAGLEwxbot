@@ -50,6 +50,22 @@ const statusLabels = {
   MENTION_ONLY: '被 @ 时回复 / MENTION ONLY',
 };
 
+// 纯中文状态（总览页 Cardless 去双语，2026-08-08）
+const statusZh = (status) => ({
+  STARTING: '启动中', RESTORING: '恢复中', WAITING_SCAN: '等待扫码',
+  WAITING_AGENT: '等待连接', WAITING_HOOK: '等待 Hook', WAITING: '等待连接',
+  LISTENING: '正在监听', STOPPED: '已停止', SCANNED: '已扫码',
+  ONLINE: '在线', CONNECTED: '已连接', READY: '就绪',
+  RUNNING: '运行中', ACTIVE: '运行中', TEST: '测试中', SLEEPING: '休眠中',
+  PAUSED: '暂停回复', MANUAL_OFFLINE: '紧急离线', LOGGING_OUT: '正在下线',
+  LOGGED_OUT: '已退出', DISCONNECTED: '未连接', DISABLED: '未启用',
+  WAITING_BIND: '等待绑定', BOUND: '已绑定', UNBOUND: '未绑定',
+  DEGRADED: '连接异常', RECOVERING: '自动修复', ERROR: '错误', EXITED: '已退出',
+  UNKNOWN: '未知', HEALTHY: '健康', STALE: '同步超时', FAILED: '失败',
+  OFFLINE: '离线', SENDING: '发送中', OFF: '已关闭', OBSERVE: '仅观察',
+  MENTION_ONLY: '被 @ 时回复',
+}[status] || String(status || '未知'));
+
 const messageStatusLabels = {
   RECEIVED: 'RECEIVED',
   SENT: 'SENT',
@@ -96,22 +112,15 @@ function duration(startedAt) {
 }
 
 function setService(key, status, detail) {
-  $(`${key}-status`).textContent = bilingualStatus(status);
+  $(`${key}-status`).textContent = statusZh(status);
   const detailNode = $(`${key}-detail`);
   if (detailNode) detailNode.textContent = detail || '';
-  const service = document.querySelector(`.service[data-key="${key}"]`);
+  const item = document.querySelector(`.svc-item[data-key="${key}"]`);
+  if (!item) return;
+  // Cardless：运行=品牌黄高亮 + 发光圆点；停用/等待=低饱和灰（2026-08-08）
   const active = ['ONLINE', 'CONNECTED', 'READY', 'RUNNING', 'ACTIVE'].includes(status);
-  const testing = status === 'TEST';
-  const bad = ['ERROR', 'EXITED', 'LOGGED_OUT', 'MANUAL_OFFLINE'].includes(status);
-  const color = active
-    ? 'var(--accent)'
-    : bad
-      ? 'var(--red)'
-      : testing
-        ? 'var(--blue)'
-        : 'var(--amber)';
-  service.querySelector('i').style.background = color;
-  service.querySelector('span').style.color = color;
+  item.classList.toggle('live', active);
+  item.classList.toggle('dead', !active);
 }
 
 function renderSelfAvatar(state) {
@@ -120,6 +129,8 @@ function renderSelfAvatar(state) {
   el.classList.remove('visible');
   el.title = '';
   el.innerHTML = '';
+  const heroAvatar = $('hero-avatar');
+  if (heroAvatar) heroAvatar.innerHTML = '';
   if (!sa.avatarBase64) return;
   el.classList.add('visible');
   el.title = sa.nickname || sa.wxid || 'FEAGLE';
@@ -127,6 +138,13 @@ function renderSelfAvatar(state) {
   img.src = `data:image/jpeg;base64,${sa.avatarBase64}`;
   img.alt = sa.nickname || 'bot';
   el.appendChild(img);
+  // 总览页中央核心头像（Cardless 2026-08-08）
+  if (heroAvatar) {
+    const heroImg = document.createElement('img');
+    heroImg.src = img.src;
+    heroImg.alt = img.alt;
+    heroAvatar.appendChild(heroImg);
+  }
 }
 
 function renderAdminMode(state) {
@@ -137,25 +155,25 @@ function renderAdminMode(state) {
   const badge = $('admin-mode-badge');
   const pauseButton = $('pause-toggle');
   badge.dataset.mode = mode;
-  badge.textContent = bilingualStatus(mode);
+  badge.textContent = statusZh(mode === 'RUNNING' ? 'RUNNING' : mode === 'PAUSED' ? 'PAUSED' : 'MANUAL_OFFLINE');
 
   if (mode === 'MANUAL_OFFLINE') {
-    $('admin-mode-hint').textContent = '微信与自动恢复已停止 / WeChat & auto-heal stopped';
+    $('admin-mode-hint').textContent = '微信与自动恢复已停止';
     pauseButton.disabled = true;
     pauseButton.textContent = '解除时限';
   } else if (sleepOverride) {
     // 已解除时限（休眠豁免）：休眠时段内也正常回复
-    $('admin-mode-hint').textContent = '已解除时限：休眠时段内正常回复 / Sleep override active';
+    $('admin-mode-hint').textContent = '已解除时限：休眠时段内正常回复';
     pauseButton.disabled = false;
     pauseButton.textContent = '恢复时限';
   } else if (sleeping) {
     // 休眠时限中：只接收不回复
-    $('admin-mode-hint').textContent = '时限中：只接收不回复，可解除 / Time limit: receive only';
+    $('admin-mode-hint').textContent = '时限中：只接收不回复，可解除';
     pauseButton.disabled = false;
     pauseButton.textContent = '解除时限';
   } else {
     // 非休眠时段：没有时限，按钮不可用
-    $('admin-mode-hint').textContent = '正常接收并回复消息 / Processing messages';
+    $('admin-mode-hint').textContent = '正常接收并回复消息';
     pauseButton.disabled = true;
     pauseButton.textContent = '解除时限';
   }
@@ -279,71 +297,52 @@ function render(state) {
   const android = state.android || {};
   const androidActive = transport.active === 'android';
   $('transport-current').textContent = androidActive ? 'Android Hook' : 'Wechat4u Web';
-  $('android-diagnostics').hidden = !androidActive;
-  if (androidActive) {
-    $('android-server').textContent = `${bilingualStatus(android.serverStatus)} · ${android.endpoint || '--'}`;
-    $('android-device').textContent = `${bilingualStatus(android.deviceStatus)} · ${android.deviceIdMasked || '--'}`;
-    $('android-hook').textContent = android.hookConnected
-      ? '已连接 / CONNECTED'
-      : '未连接 / DISCONNECTED';
-    const hbAge = android.heartbeatAgeMs;
-    const hbTimeout = android.heartbeatTimeoutMs || 75_000;
-    const hbEl = $('android-heartbeat');
-    hbEl.textContent = android.lastHeartbeatAt
-      ? `${time(android.lastHeartbeatAt)} · ${Math.round((hbAge || 0) / 1000)}s / ${Math.round(hbTimeout / 1000)}s`
-      : '--';
-    if (hbAge == null) delete hbEl.dataset.status;
-    else hbEl.dataset.status = hbAge >= hbTimeout ? 'crit' : (hbAge >= hbTimeout * 0.6 ? 'warn' : 'ok');
-    $('android-pending').textContent = android.pendingCommands || 0;
-  }
+  // 安卓链路服务项（Cardless：收进左列服务列表）
+  const hbAge = android.heartbeatAgeMs;
+  const hbTimeout = android.heartbeatTimeoutMs || 75_000;
+  const hbText = android.lastHeartbeatAt
+    ? `心跳 ${time(android.lastHeartbeatAt)} · ${Math.round((hbAge || 0) / 1000)}s`
+    : '心跳 --';
+  setService('android', android.hookConnected ? 'CONNECTED' : (androidActive ? 'WAITING' : 'OFFLINE'),
+    `${android.deviceIdMasked || '--'} · Hook ${android.hookConnected ? '已连接' : '未连接'} · ${hbText}`);
   $('account').textContent = state.wechat.account || '--';
-  $('session-status').textContent = bilingualStatus(state.wechat.status);
-  $('protocol-health').textContent = bilingualStatus(state.wechat.protocolHealth || 'UNKNOWN');
-  $('protocol-health').dataset.status = state.wechat.protocolHealth || 'UNKNOWN';
-  const syncAge = state.wechat.syncAgeMs;
-  const syncDegraded = state.wechat.degradedAfterMs || 90_000;
-  const lastSyncEl = $('last-sync');
-  lastSyncEl.textContent = state.wechat.lastSyncAt
-    ? `上次 / LAST ${time(state.wechat.lastSyncAt)} · ${Math.max(0, Math.round((syncAge || 0) / 1000))}s`
-    : '上次同步 / LAST --';
-  if (syncAge == null) delete lastSyncEl.dataset.status;
-  else lastSyncEl.dataset.status = syncAge >= syncDegraded ? 'crit' : (syncAge >= syncDegraded * 0.6 ? 'warn' : 'ok');
-  $('recovery-attempts').textContent = state.wechat.recoveryAttempts || 0;
-  $('sync-errors').textContent =
-    `错误 / ERRORS ${state.wechat.syncErrors || 0} · 连续 / STREAK ${state.wechat.consecutiveSyncErrors || 0}`;
-  $('wechat-status').textContent = bilingualStatus(state.wechat.status);
   $('wechat-detail').textContent = state.wechat.detail;
+  // 中央核心：在线 = 品牌黄呼吸光圈 + 黄状态点（Cardless 2026-08-08）
+  const online = state.wechat.status === 'ONLINE';
+  const heroOrb = $('hero-orb');
+  if (heroOrb) heroOrb.classList.toggle('online', online);
+  const heroDot = $('hero-dot');
+  if (heroDot) heroDot.classList.toggle('online', online);
   $('qr-time').textContent = state.wechat.qrCreatedAt
-    ? `二维码生成 / QR ISSUED ${time(state.wechat.qrCreatedAt)}`
+    ? `二维码生成 ${time(state.wechat.qrCreatedAt)}`
     : state.wechat.detail;
 
+  // 中央核心主体：头像（Android 已配对）优先，否则二维码（wechat4u），都没有显示脉冲占位
   const hasQr = Boolean(state.wechat.qrDataUrl);
+  const sa = state.selfAvatar || {};
+  const heroAvatar = $('hero-avatar');
+  const showAvatar = Boolean(heroAvatar && sa.avatarBase64);
+  if (heroAvatar) heroAvatar.style.display = showAvatar ? 'block' : 'none';
   $('qr').src = hasQr ? state.wechat.qrDataUrl : '';
-  $('qr').style.display = hasQr ? 'block' : 'none';
-  $('qr-placeholder').style.display = hasQr ? 'none' : 'grid';
+  $('qr').style.display = hasQr && !showAvatar ? 'block' : 'none';
+  $('qr-placeholder').style.display = !hasQr && !showAvatar ? 'grid' : 'none';
 
   setService('astrbot', state.astrbot.status, state.astrbot.detail);
   setService(
     'onebot',
     state.onebot.status,
-    `${state.onebot.detail} · 处理中 / IN FLIGHT ${state.onebot.inFlight || 0}`,
+    `${state.onebot.detail} · 处理中 ${state.onebot.inFlight || 0}`,
   );
-  const notifications = state.notifications || {
-    status: 'DISABLED',
-    detail: '飞书通知尚未配置 / Feishu is not configured',
-  };
-  setService('notifications', notifications.status, [
-    notifications.detail,
-    notifications.lastSentAt ? `上次 / LAST ${time(notifications.lastSentAt)}` : '',
-  ].filter(Boolean).join(' · '));
   setService('schedule', state.schedule.mode);
   $('timezone').textContent = state.schedule.timezone;
   $('quiet-hours').textContent = state.schedule.quietHours;
 
+  // 海报级数据：72px 大数字，>0 品牌黄高亮 / =0 淡灰（Cardless 2026-08-08）
   $('metrics').replaceChildren(...Object.entries(state.counters).map(([key, value]) => {
     const row = document.createElement('div');
-    row.className = 'metric-row';
-    const name = document.createElement('span');
+    row.className = 'metric-hero';
+    if (Number(value) > 0) row.classList.add('live');
+    const name = document.createElement('small');
     name.textContent = metricLabels[key] || key.toUpperCase();
     const num = document.createElement('strong');
     num.textContent = value;

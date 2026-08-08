@@ -29,9 +29,11 @@
       </div>
     </header>
 
-    <!-- ══════════ 视图 1 · 总览 OVERVIEW ══════════ -->
-    <section class="view active" data-view="overview">
-      <section class="transport-bar" aria-label="消息通道管理">
+    <!-- ══════════ 视图 1 · 总览 OVERVIEW（Cardless 2026-08-08）══════════ -->
+    <section class="view overview-cardless active" data-view="overview">
+
+      <!-- 消息通道（去框化保留） -->
+      <div class="transport-strip" aria-label="消息通道管理">
         <strong class="tb-title">消息通道</strong>
         <form id="transport-settings-form" class="segmented" role="radiogroup">
           <label class="seg"><input type="radio" name="transport" value="wechat4u" data-setting="transport"><span>Wechat4u</span></label>
@@ -42,109 +44,70 @@
         <button class="button secondary" id="save-transport" type="button">保存</button>
         <span id="transport-hint" class="tb-hint"></span>
         <span id="save-status-transport" class="tb-hint"></span>
-      </section>
+      </div>
 
-      <section class="overview-grid">
-        <article class="panel control-panel">
-          <div class="panel-title">
-            <div><strong>服务与控制</strong></div>
+      <!-- 无框流体三区：左服务 / 中央核心 / 右数据 -->
+      <div class="oc-grid">
+
+        <!-- 左 · 服务列表（纯文字） -->
+        <aside class="oc-svc">
+          <div class="svc-item" data-key="astrbot">
+            <i class="svc-dot"></i>
+            <div class="svc-txt">
+              <b>AstrBot</b>
+              <small id="astrbot-detail">机器人框架</small>
+            </div>
+            <span id="astrbot-status" class="svc-state">启动中</span>
           </div>
-
-          <div class="service-list">
-            <div class="service" data-key="astrbot">
-              <i></i><b>AstrBot <small>机器人框架</small></b>
-              <span id="astrbot-status">启动中 / STARTING</span>
+          <div class="svc-item" data-key="onebot">
+            <i class="svc-dot"></i>
+            <div class="svc-txt">
+              <b>OneBot WS</b>
+              <small id="onebot-detail">协议桥接</small>
             </div>
-            <p id="astrbot-detail" class="service-detail">等待启动 / Waiting</p>
-
-            <div class="service" data-key="onebot">
-              <i></i><b>OneBot WS <small>协议桥接</small></b>
-              <span id="onebot-status">未连接 / DISCONNECTED</span>
-            </div>
-            <p id="onebot-detail" class="service-detail">等待连接 / Waiting</p>
-
-            <div class="service" data-key="notifications">
-              <i></i><b>飞书通知</b>
-              <span id="notifications-status">未启用 / DISABLED</span>
-            </div>
-            <p id="notifications-detail" class="service-detail">等待配置 / Waiting for config</p>
-
-            <div class="service" data-key="schedule">
-              <i></i><b>定时休眠</b>
-              <span id="schedule-status">运行中 / ACTIVE</span>
-            </div>
-            <p class="service-detail"><span id="timezone">Asia/Shanghai</span> · <span id="quiet-hours">00:00-07:00</span></p>
+            <span id="onebot-status" class="svc-state">未连接</span>
           </div>
-
-          <div class="admin-control">
-            <div class="control-heading">
-              <strong>运行开关</strong>
-              <small id="admin-mode-hint">正常接收并回复消息 / Processing messages</small>
+          <div class="svc-item" data-key="schedule">
+            <i class="svc-dot"></i>
+            <div class="svc-txt">
+              <b>定时休眠</b>
+              <small><span id="timezone">Asia/Shanghai</span> · <span id="quiet-hours">00:00-07:00</span></small>
             </div>
+            <span id="schedule-status" class="svc-state">运行中</span>
           </div>
-
-        </article>
-
-        <article class="panel login-panel">
-          <div class="panel-title">
-            <div><strong>微信登录</strong></div>
-            <span class="mode-badge" id="admin-mode-badge">运行中</span>
+          <div class="svc-item" data-key="android">
+            <i class="svc-dot"></i>
+            <div class="svc-txt">
+              <b>安卓链路</b>
+              <small id="android-detail">等待连接</small>
+            </div>
+            <span id="android-status" class="svc-state">--</span>
           </div>
-          <div class="login-top">
-            <div class="qr-shell">
-              <img id="qr" alt="微信登录二维码 / WeChat login QR code">
-              <div id="qr-placeholder" class="qr-placeholder">
-                <span class="pulse"></span>
-              </div>
-            </div>
-            <div class="account-status-card">
-              <div class="as-head">账号状态</div>
-              <div class="as-body">
-                <div class="as-row"><span>微信账号</span><b id="account">--</b></div>
-                <div class="as-row"><span>会话状态</span><b id="session-status">启动中 / STARTING</b></div>
-                <div class="as-row"><span>登录状态</span><b id="wechat-status">启动中 / STARTING</b></div>
-                <div class="as-detail" id="wechat-detail">正在初始化 / Initializing</div>
-              </div>
-            </div>
-          </div>
-          <div class="diag-grid">
-            <div class="diag-cell">
-              <div class="diag-head">协议同步</div>
-              <div class="diag-body">
-                <div class="ac-row"><span class="d-label">健康</span><strong id="protocol-health">未知 / UNKNOWN</strong></div>
-                <div class="ac-row"><span class="d-label">上次同步</span><small id="last-sync">--</small></div>
-                <div class="ac-row"><span class="d-label">错误</span><small id="sync-errors">0</small></div>
-              </div>
-            </div>
-            <div class="diag-cell">
-              <div class="diag-head">自动修复</div>
-              <div class="diag-body">
-                <div class="ac-row"><span class="d-label">重试次数</span><strong id="recovery-attempts">0</strong></div>
-              </div>
-            </div>
-            <div class="diag-cell">
-              <div class="diag-head">扫码登录</div>
-              <div class="diag-body">
-                <p class="hint" id="qr-time">等待协议状态 / Waiting for protocol</p>
-              </div>
-            </div>
-            <div class="diag-cell android-diagnostics" id="android-diagnostics" hidden>
-              <div class="diag-head">安卓链路诊断</div>
-              <div class="diag-body">
-                <dl>
-                  <div><dt>WSS 网关</dt><dd id="android-server">--</dd></div>
-                  <div><dt>设备</dt><dd id="android-device">--</dd></div>
-                  <div><dt>Hook 通道</dt><dd id="android-hook">--</dd></div>
-                  <div><dt>心跳</dt><dd id="android-heartbeat">--</dd></div>
-                  <div><dt>待确认命令</dt><dd id="android-pending">0</dd></div>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </article>
+          <p class="oc-hint" id="admin-mode-hint">正常接收并回复消息</p>
+        </aside>
 
-        <aside class="metrics" id="metrics" aria-label="消息统计 / Message metrics"></aside>
-      </section>
+        <!-- 中 · 中央核心（无背景悬浮） -->
+        <div class="oc-hero">
+          <div class="hero-orb" id="hero-orb">
+            <img id="qr" alt="微信登录二维码">
+            <div id="qr-placeholder" class="qr-placeholder"><span class="pulse"></span></div>
+            <div class="hero-avatar" id="hero-avatar"></div>
+          </div>
+          <div class="hero-name">
+            <i class="hero-dot" id="hero-dot"></i>
+            <b id="account">--</b>
+          </div>
+          <div class="hero-sub">
+            <span id="admin-mode-badge">运行中</span>
+            <span id="wechat-detail"></span>
+          </div>
+          <p class="hint" id="qr-time"></p>
+        </div>
+
+        <!-- 右 · 海报级数据（JS 渲染） -->
+        <aside class="oc-data" id="metrics" aria-label="消息统计"></aside>
+
+      </div>
     </section>
 
     <!-- ══════════ 视图 2 · 消息流 TRAFFIC ══════════ -->
