@@ -1,4 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promises as fs } from 'node:fs';
 import { WebSocket, WebSocketServer } from 'ws';
 import { WECHAT_ADMIN_MODES } from './control-state.js';
 import { AndroidPairingStore } from './android-pairing-store.js';
@@ -582,6 +584,31 @@ export class AndroidWechatClient {
     }
   }
 
+  /** wxgf（微信 HEVC 私有格式）→ JPEG：ffmpeg 解码。
+   *  返回 base64 JPEG；失败返回 null。 */
+  async decodeWxgfToJpeg(imageBase64) {
+    if (!imageBase64 || imageBase64.length === 0) return null;
+    const tmpIn = `/tmp/wxgf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wxgf`;
+    const tmpOut = `${tmpIn}.jpg`;
+    try {
+      await fs.writeFile(tmpIn, Buffer.from(imageBase64, 'base64'));
+      await execFile('ffmpeg', [
+        '-y', '-i', tmpIn,
+        '-frames:v', '1', '-update', '1',
+        '-q:v', '5',
+        tmpOut,
+      ], { timeout: 15_000 });
+      const jpeg = await fs.readFile(tmpOut);
+      return jpeg.toString('base64');
+    } catch (error) {
+      console.error('[wxgf-decode] failed:', error?.message || error);
+      return null;
+    } finally {
+      await fs.unlink(tmpIn).catch(() => {});
+      await fs.unlink(tmpOut).catch(() => {});
+    }
+  }
+
   async handlePrivateImage(socket, message) {
     const eventId = String(message.eventId || '').trim();
     const talker = String(message.talker || '').trim();
@@ -598,6 +625,18 @@ export class AndroidWechatClient {
     ) {
       socket.close(1008, 'Invalid event');
       return;
+    }
+
+    // wxgf（微信 HEVC 私有格式）→ JPEG：服务器 ffmpeg 解码
+    let effectiveBase64 = imageBase64;
+    if (message.imageFormat === 'wxgf') {
+      const decoded = await this.decodeWxgfToJpeg(imageBase64);
+      if (!decoded) {
+        console.error(`[wxgf-decode] private_image ${eventId} decode failed, drop`);
+        return;
+      }
+      effectiveBase64 = decoded;
+      console.log(`[wxgf-decode] private ${eventId} wxgf→jpeg (${decoded.length} b64)`);
     }
 
     const receiptId = `android:${socket.feagle.deviceId}:${eventId}`;
@@ -641,7 +680,7 @@ export class AndroidWechatClient {
       await this.onPrivateImage({
         userId,
         nickname,
-        imageBase64,
+        imageBase64: effectiveBase64,
         wechatMessageId: receiptId,
         createTime: normalizeTimestamp(message.createTime),
       });
@@ -707,6 +746,18 @@ export class AndroidWechatClient {
       socket.close(1008, 'Invalid event');
       return;
     }
+
+    // wxgf（微信 HEVC 私有格式）→ JPEG：服务器 ffmpeg 解码（引用缓存也用解码后）
+    let effectiveBase64 = imageBase64;
+    if (message.imageFormat === 'wxgf') {
+      const decoded = await this.decodeWxgfToJpeg(imageBase64);
+      if (!decoded) {
+        console.error(`[wxgf-decode] group_image ${eventId} decode failed, drop`);
+        return;
+      }
+      effectiveBase64 = decoded;
+      console.log(`[wxgf-decode] group ${eventId} wxgf→jpeg (${decoded.length} b64)`);
+    }
     const receiptId = `android:${socket.feagle.deviceId}:${eventId}`;
     if (this.processingEvents.has(receiptId)) {
       this.nack(socket, eventId, 2_000, 'event_in_progress');
@@ -717,8 +768,8 @@ export class AndroidWechatClient {
       // 引用图片缓存：msgSvrId → imageBase64（引用文字到达时组合）
       const msgSvrId = Number(message.msgSvrId || 0);
       if (msgSvrId > 0) {
-        this.cacheGroupImage(msgSvrId, imageBase64);
-        console.log(`[quote-cache] svrid=${msgSvrId} cached (${imageBase64.length} b64)`);
+        this.cacheGroupImage(msgSvrId, effectiveBase64);
+        console.log(`[quote-cache] svrid=${msgSvrId} cached (${effectiveBase64.length} b64)`);
       }
       const groupId = this.idMap.entity(
         'group',
@@ -743,7 +794,7 @@ export class AndroidWechatClient {
         groupName: 'Android group',
         userId,
         nickname: sender,
-        imageBase64,
+        imageBase64: effectiveBase64,
         wechatMessageId: receiptId,
         createTime: normalizeTimestamp(message.createTime),
       });
