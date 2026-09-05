@@ -1284,11 +1284,11 @@ function Test-AndroidSource {
         if ($appBuild -notmatch "compileSdk 34") {
             $errors.Add("Android Agent compileSdk 必须为 34")
         }
-        if ($appBuild -notmatch "versionCode 14") {
-            $errors.Add("Android Agent versionCode 必须为 14")
+        if ($appBuild -notmatch "versionCode 15") {
+            $errors.Add("Android Agent versionCode 必须为 15")
         }
-        if ($appBuild -notmatch 'versionName "0\.6\.0"') {
-            $errors.Add("Android Agent versionName 必须为 0.6.0")
+        if ($appBuild -notmatch 'versionName "0\.7\.0"') {
+            $errors.Add("Android Agent versionName 必须为 0.7.0")
         }
     }
 
