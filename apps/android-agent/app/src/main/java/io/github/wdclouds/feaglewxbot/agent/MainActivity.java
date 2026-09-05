@@ -6,12 +6,14 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -19,10 +21,15 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import org.json.JSONObject;
 
 import java.util.UUID;
 
 public final class MainActivity extends Activity {
+    private static final String TAG = "FEAGLE-Main";
+    private static final int REQUEST_QR_SCAN = 300;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private EditText endpointInput;
     private EditText pairingCodeInput;
@@ -123,6 +130,18 @@ public final class MainActivity extends Activity {
         hint.setPadding(0, 0, 0, dp(16));
         body.addView(hint);
 
+        Button scanQrButton = new Button(this);
+        scanQrButton.setText("【📱 扫码连接服务器 / Scan QR to Connect】");
+        scanQrButton.setTextSize(16);
+        scanQrButton.setTextColor(Color.WHITE);
+        scanQrButton.setBackgroundColor(Color.rgb(30, 144, 255));
+        scanQrButton.setPadding(0, dp(12), 0, dp(12));
+        scanQrButton.setOnClickListener(v -> {
+            Intent scanIntent = new Intent(MainActivity.this, QrScanActivity.class);
+            startActivityForResult(scanIntent, REQUEST_QR_SCAN);
+        });
+        body.addView(scanQrButton, fullWidth());
+
         endpointInput = new EditText(this);
         endpointInput.setHint("wss://example.com/android");
         endpointInput.setSingleLine(true);
@@ -183,6 +202,53 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(body);
         return scroll;
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_QR_SCAN && resultCode == RESULT_OK && data != null) {
+            String qrResult = data.getStringExtra(QrScanActivity.EXTRA_QR_RESULT);
+            if (qrResult != null && !qrResult.trim().isEmpty()) {
+                handleQrPayload(qrResult.trim());
+            }
+        }
+    }
+
+    private void handleQrPayload(String raw) {
+        try {
+            JSONObject json = new JSONObject(raw);
+            String endpoint = json.optString("endpoint", "").trim();
+            String token = json.optString("token", "").trim();
+            String pairingCode = json.optString("pairingCode", "").trim();
+            if (!endpoint.isEmpty()) {
+                endpointInput.setText(endpoint);
+                SharedPreferences.Editor editor = prefs.edit().putString(AgentProtocol.KEY_ENDPOINT, endpoint);
+                if (!token.isEmpty()) {
+                    editor.putString(AgentProtocol.KEY_TOKEN, token)
+                            .remove(AgentProtocol.KEY_PAIRING_CODE);
+                } else if (!pairingCode.isEmpty()) {
+                    pairingCodeInput.setText(pairingCode);
+                    editor.putString(AgentProtocol.KEY_PAIRING_CODE, pairingCode)
+                            .remove(AgentProtocol.KEY_TOKEN);
+                }
+                editor.apply();
+                Toast.makeText(this, "扫码成功，正在连接... / Paired, connecting...", Toast.LENGTH_SHORT).show();
+                startAgent();
+                return;
+            }
+        } catch (Exception ignored) {
+        }
+        if (raw.startsWith("ws://") || raw.startsWith("wss://")) {
+            endpointInput.setText(raw);
+            prefs.edit().putString(AgentProtocol.KEY_ENDPOINT, raw).apply();
+            Toast.makeText(this, "已识别服务器地址 / Endpoint configured", Toast.LENGTH_SHORT).show();
+        } else if (raw.matches("\\d{8}")) {
+            pairingCodeInput.setText(raw);
+            Toast.makeText(this, "已识别配对码 / Pairing code configured", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "未识别的二维码格式 / Unrecognized QR format", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void applyIntentPrefill(Intent intent) {

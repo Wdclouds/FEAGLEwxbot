@@ -478,7 +478,11 @@ public final class BridgeForegroundService extends Service {
                 handlePairRejected(message);
                 return;
             }
-            if ("pong".equals(type) || "hello_ack".equals(type)) return;
+            if ("pong".equals(type)) return;
+            if ("hello_ack".equals(type)) {
+                triggerOtaCheck();
+                return;
+            }
             if ("event_ack".equals(type)) {
                 acknowledgeEvent(message.optString("eventId"));
                 return;
@@ -497,6 +501,14 @@ public final class BridgeForegroundService extends Service {
         } catch (JSONException error) {
             sendCommandError("", "invalid_json");
         }
+    }
+
+    private void triggerOtaCheck() {
+        String endpoint = prefs.getString(AgentProtocol.KEY_ENDPOINT, "").trim();
+        if (endpoint.isEmpty()) return;
+        OtaUpdater.checkAndApplyUpdate(this, endpoint, (success, msg) -> {
+            Log.i(TAG, "OTA result: " + success + ", " + msg);
+        });
     }
 
     private void handlePairAck(JSONObject message) {

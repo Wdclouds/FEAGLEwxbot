@@ -253,10 +253,10 @@ export class DashboardServer {
 
     if (url.pathname === '/api/health/ready') {
       const snapshot = this.state.snapshot();
-      const ready = snapshot.wechat.status === 'ONLINE'
-        && snapshot.wechat.protocolHealth === 'HEALTHY'
-        && snapshot.hermes.status === 'READY'
-        && snapshot.onebot.status === 'CONNECTED';
+      const ready = snapshot.wechat?.status === 'ONLINE'
+        && snapshot.wechat?.protocolHealth === 'HEALTHY'
+        && snapshot.hermes?.status === 'READY'
+        && snapshot.onebot?.status === 'CONNECTED';
       response.writeHead(ready ? 200 : 503, {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-store',
@@ -264,12 +264,12 @@ export class DashboardServer {
       response.end(JSON.stringify({
         status: ready ? 'ready' : 'not_ready',
         wechat: {
-          status: snapshot.wechat.status,
-          protocolHealth: snapshot.wechat.protocolHealth,
-          lastSyncAt: snapshot.wechat.lastSyncAt,
+          status: snapshot.wechat?.status || 'UNKNOWN',
+          protocolHealth: snapshot.wechat?.protocolHealth || 'UNKNOWN',
+          lastSyncAt: snapshot.wechat?.lastSyncAt || '',
         },
-        hermes: snapshot.hermes.status,
-        onebot: snapshot.onebot.status,
+        hermes: snapshot.hermes?.status || 'UNKNOWN',
+        onebot: snapshot.onebot?.status || 'UNKNOWN',
       }));
       return;
     }
@@ -646,6 +646,41 @@ export class DashboardServer {
         downloadUrl: '/api/device/download-agent',
         releaseNotes: 'FEAGLE WxBot Agent 0.7.0: 支持扫码免密配对与OTA静默自更新机制',
       }));
+      return;
+    }
+
+    // ---- GET /api/device/download-agent (APK 分发下载) ----
+    if (url.pathname === '/api/device/download-agent') {
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const candidatePaths = [
+        path.resolve(this.publicRoot, 'downloads', 'feaglewxbot-agent.apk'),
+        path.resolve(this.publicRoot, '..', '..', 'android-agent', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
+        path.resolve('/opt/FEAGLEwxbot/dist/feaglewxbot-agent.apk'),
+      ];
+      let apkBuffer = null;
+      for (const p of candidatePaths) {
+        try {
+          apkBuffer = await fs.readFile(p);
+          break;
+        } catch {
+          // try next
+        }
+      }
+      if (apkBuffer) {
+        response.writeHead(200, {
+          'Content-Type': 'application/vnd.android.package-archive',
+          'Content-Disposition': 'attachment; filename="feaglewxbot-agent.apk"',
+          'Content-Length': apkBuffer.length,
+          'Cache-Control': 'no-store',
+        });
+        response.end(apkBuffer);
+      } else {
+        response.writeHead(404, {
+          'Content-Type': 'application/json; charset=utf-8',
+        });
+        response.end(JSON.stringify({ error: 'APK package not found on server' }));
+      }
       return;
     }
 
