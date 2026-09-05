@@ -271,6 +271,14 @@ const commonWechatOptions = {
   groupReplyMaxChars: settings.groupReplyMaxChars,
   groupJitterMinMs: settings.groupJitterMinMs,
   groupJitterMaxMs: settings.groupJitterMaxMs,
+  contactsSyncIntervalMs: positiveInteger(
+    process.env.ANDROID_CONTACTS_SYNC_INTERVAL_MS,
+    30 * 60_000,
+  ),
+  contactsSyncTimeoutMs: positiveInteger(
+    process.env.ANDROID_CONTACTS_SYNC_TIMEOUT_MS,
+    25_000,
+  ),
 };
 if (transport === 'android') {
   wechat = new AndroidWechatClient(commonWechatOptions);
@@ -311,7 +319,8 @@ async function main() {
   await dashboard.start();
   notifier.start();
   feishuBinding.start();
-  astrbot.start();
+  // host mode：AstrBot 由外部管理（hermes-wxbridge.service 不监督 AstrBot），
+  // 仅保留 supervisor 实例用于 /api/status 状态展示，不 bootstrap/spawn。
   await wechat.start();
   onebot.start();
 }
@@ -328,7 +337,6 @@ function shutdown(signal, exitCode = 0) {
   groupSafety.stop();
   onebot.stop();
   wechat.shutdown();
-  astrbot.stop();
   dashboard.stop();
   idMap.close();
   const exitTimer = setTimeout(() => process.exit(exitCode), 1_000);

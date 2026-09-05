@@ -305,7 +305,7 @@ public final class WechatHook implements IXposedHookLoadPackage {
     }
 
     /** 解码 → 等比缩到最长边 ≤ maxEdge → JPEG 压缩（子线程调用，内存友好）。 */
-    private static byte[] compressToJpeg(java.io.File file, int maxEdge, int quality) {
+    static byte[] compressToJpeg(java.io.File file, int maxEdge, int quality) {
         android.graphics.BitmapFactory.Options opts =
                 new android.graphics.BitmapFactory.Options();
         opts.inJustDecodeBounds = true;
@@ -534,25 +534,91 @@ public final class WechatHook implements IXposedHookLoadPackage {
 
         @Override
         public void handleMessage(Message message) {
-            if (message.what != AgentProtocol.MSG_SEND_TEXT) {
-                super.handleMessage(message);
+            if (message.what == AgentProtocol.MSG_SEND_TEXT) {
+                handleSendTextCommand(message);
                 return;
             }
-            Bundle data = message.getData();
-            String commandId = data.getString("command_id", "");
-            String talker = data.getString("talker", "").trim();
-            String content = data.getString("content", "");
-            String chatType = data.getString("chat_type", "private");
-            boolean validTalker = "group".equals(chatType)
-                    ? validGroupTalker(talker)
-                    : validPrivateTalker(talker);
-            if (!validTalker
-                    || content.isEmpty() || content.length() > 2000) {
-                sendCommandResult(commandId, false, "invalid_command");
+            if (message.what == AgentProtocol.MSG_REFRESH_CONTACTS) {
+                handleRefreshContacts(message);
                 return;
             }
-            sendWechatText(commandId, talker, content);
+            super.handleMessage(message);
         }
+    }
+
+    private static void handleSendTextCommand(Message message) {
+        Bundle data = message.getData();
+        String commandId = data.getString("command_id", "");
+        String talker = data.getString("talker", "").trim();
+        String content = data.getString("content", "");
+        String chatType = data.getString("chat_type", "private");
+        boolean validTalker = "group".equals(chatType)
+                ? validGroupTalker(talker)
+                : validPrivateTalker(talker);
+        if (!validTalker
+                || content.isEmpty() || content.length() > 2000) {
+            sendCommandResult(commandId, false, "invalid_command");
+            return;
+        }
+        sendWechatText(commandId, talker, content);
+    }
+
+    /** 静默联系人快照（协议 refresh_contacts）：非 daemon 后台线程构建
+     *  （低内存平板 daemon 线程会被饿死——2026-08-08 实测教训），
+     *  全程不发送微信消息、不重连、不切换会话。 */
+    private static void handleRefreshContacts(Message message) {
+        Bundle data = message.getData();
+        final String commandId = data.getString("command_id", "").trim();
+        final boolean includeAvatars = data.getBoolean("include_avatars", false);
+        if (commandId.isEmpty()) {
+            sendCommandResult(commandId, false, "invalid_command");
+            return;
+        }
+        Thread worker = new Thread(() -> {
+            try {
+                Wechat8070Adapter.SnapshotBuildResult result =
+                        Wechat8070Adapter.buildContactsSnapshot(
+                                includeAvatars, ownWxid());
+                Message outbound = Message.obtain(
+                        null, AgentProtocol.MSG_CONTACTS_SNAPSHOT);
+                Bundle resultBundle = new Bundle();
+                resultBundle.putString("command_id", commandId);
+                resultBundle.putString("snapshot_json", result.json);
+                // 完整性标记：仅主动枚举完整成功才 true（Bridge 据此决定是否允许删除）
+                resultBundle.putBoolean("full", result.full);
+                outbound.setData(resultBundle);
+                sendToAgent(outbound);
+                // 只记元信息，不记联系人数据/头像 Base64
+                log("contacts snapshot sent command=" + commandId
+                        + " full=" + result.full
+                        + " bytes=" + result.json.length());
+            } catch (Throwable error) {
+                logError("contacts snapshot failed command=" + commandId, error);
+                sendCommandResult(commandId, false, error.getClass().getSimpleName());
+            }
+        }, "feagle-contacts");
+        worker.setDaemon(false);
+        worker.start();
+    }
+
+    /** 机器人自己的 wxid（SharedPreferences，缓存；用于快照过滤自己）。 */
+    private static volatile String selfWxid;
+
+    static String ownWxid() {
+        String cached = selfWxid;
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            android.content.SharedPreferences prefs = appContext
+                    .getSharedPreferences("com.tencent.mm_preferences",
+                            android.content.Context.MODE_PRIVATE);
+            String wxid = prefs.getString("login_weixin_username", "");
+            selfWxid = wxid == null ? "" : wxid;
+        } catch (Throwable ignored) {
+            selfWxid = "";
+        }
+        return selfWxid;
     }
 
     private static void sendWechatText(String commandId, String talker, String content) {
@@ -707,7 +773,7 @@ public final class WechatHook implements IXposedHookLoadPackage {
         worker.start();
     }
 
-    private static String md5Hex(String input) {
+    static String md5Hex(String input) {
         try {
             java.security.MessageDigest digest =
                     java.security.MessageDigest.getInstance("MD5");

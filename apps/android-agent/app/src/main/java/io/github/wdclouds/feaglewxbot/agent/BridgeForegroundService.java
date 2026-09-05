@@ -59,6 +59,8 @@ public final class BridgeForegroundService extends Service {
     private Messenger notificationMessenger;
     private WebSocketClient socket;
     private int reconnectAttempt;
+    /** 进行中的联系人同步 commandId（同一时间只允许一个同步任务）。 */
+    private volatile String contactsSyncCommandId;
 
     private final Runnable heartbeat = new Runnable() {
         @Override
@@ -166,6 +168,9 @@ public final class BridgeForegroundService extends Service {
                     break;
                 case AgentProtocol.MSG_SELF_AVATAR:
                     forwardSelfAvatar(message.getData());
+                    break;
+                case AgentProtocol.MSG_CONTACTS_SNAPSHOT:
+                    forwardContactsSnapshot(message.getData());
                     break;
                 case AgentProtocol.MSG_COMMAND_RESULT:
                     forwardCommandResult(message.getData());
@@ -445,6 +450,7 @@ public final class BridgeForegroundService extends Service {
                     mainHandler.post(() -> {
                         if (BridgeForegroundService.this.socket != this) return;
                         BridgeForegroundService.this.socket = null;
+                        contactsSyncCommandId = null;
                         setStatus("已断开 / disconnected (" + code + ")");
                         scheduleReconnect();
                     });
@@ -491,6 +497,10 @@ public final class BridgeForegroundService extends Service {
             }
             if ("send_text".equals(type)) {
                 handleSendText(message);
+                return;
+            }
+            if ("refresh_contacts".equals(type)) {
+                handleRefreshContacts(message);
                 return;
             }
             sendCommandError(message.optString("commandId"), "unsupported_command");
@@ -603,6 +613,68 @@ public final class BridgeForegroundService extends Service {
         put(event, "ok", false);
         put(event, "error", error);
         sendOrQueueTransient(event.toString());
+    }
+
+    /** 静默联系人同步（协议 refresh_contacts）：仅把命令转发给 Hook，
+     *  不发送任何微信消息、不重连、不切换会话。同一时间只允许一个任务。 */
+    private void handleRefreshContacts(JSONObject command) {
+        String commandId = command.optString("commandId").trim();
+        boolean includeAvatars = command.optBoolean("includeAvatars", true);
+        if (commandId.isEmpty() || commandId.length() > 128) {
+            sendCommandError(commandId, "invalid_command");
+            return;
+        }
+        if (contactsSyncCommandId != null) {
+            sendCommandError(commandId, "contacts_sync_busy");
+            return;
+        }
+        if (hookMessenger == null) {
+            sendCommandError(commandId, "hook_not_connected");
+            return;
+        }
+        contactsSyncCommandId = commandId;
+        Message message = Message.obtain(null, AgentProtocol.MSG_REFRESH_CONTACTS);
+        Bundle data = new Bundle();
+        data.putString("command_id", commandId);
+        data.putBoolean("include_avatars", includeAvatars);
+        message.setData(data);
+        try {
+            hookMessenger.send(message);
+        } catch (RemoteException error) {
+            hookMessenger = null;
+            contactsSyncCommandId = null;
+            prefs.edit().putString(
+                    AgentProtocol.KEY_HOOK_STATUS,
+                    "已断开 / disconnected").apply();
+            sendCommandError(commandId, "sender_disconnected");
+        }
+    }
+
+    /** Hook 侧联系人快照 → WS contacts_snapshot（full 标记 + commandId 回传）。 */
+    private void forwardContactsSnapshot(Bundle data) {
+        String commandId = data.getString("command_id", "").trim();
+        String snapshotJson = data.getString("snapshot_json", "");
+        if (commandId.isEmpty() || snapshotJson.isEmpty()) {
+            return;
+        }
+        if (commandId.equals(contactsSyncCommandId)) {
+            contactsSyncCommandId = null;
+        }
+        try {
+            JSONObject snapshot = new JSONObject(snapshotJson);
+            JSONObject event = baseEnvelope("contacts_snapshot");
+            put(event, "commandId", commandId);
+            // 完整性标记来自 Hook 实际枚举结果：仅枚举完整成功才允许 Bridge 删除
+            put(event, "full", data.getBoolean("full", false));
+            put(event, "generatedAt", snapshot.optString("generatedAt", ""));
+            JSONArray groups = snapshot.optJSONArray("groups");
+            JSONArray privates = snapshot.optJSONArray("privateContacts");
+            put(event, "groups", groups == null ? new JSONArray() : groups);
+            put(event, "privateContacts", privates == null ? new JSONArray() : privates);
+            sendOrQueueTransient(event.toString());
+        } catch (JSONException error) {
+            sendCommandError(commandId, "invalid_snapshot");
+        }
     }
 
     private JSONObject baseEnvelope(String type) {

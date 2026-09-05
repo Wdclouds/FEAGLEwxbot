@@ -1,0 +1,22 @@
+{
+  "protocol": "feagle.android.v1",
+  "type": "contacts_snapshot",
+  "commandId": "example-command-refresh-1",
+  "full": true,
+  "generatedAt": "2026-08-13T08:00:00.000Z",
+  "groups": [
+    {
+      "talker": "example-group@chatroom",
+      "name": "示例群",
+      "avatarBase64": "",
+      "memberCount": 0
+    }
+  ],
+  "privateContacts": [
+    {
+      "talker": "example-wxid",
+      "name": "示例联系人",
+      "avatarBase64": ""
+    }
+  ]
+}

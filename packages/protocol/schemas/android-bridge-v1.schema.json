@@ -11,7 +11,8 @@
         "pair_request", "pair_ack", "pair_rejected",
         "hello", "hello_ack", "heartbeat", "pong", "hook_status",
         "private_text", "group_text", "event_ack", "event_nack",
-        "send_text", "command_result"
+        "send_text", "command_result",
+        "refresh_contacts", "contacts_snapshot"
       ]
     },
     "deviceId": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -37,7 +38,50 @@
     "retryAfterMs": { "type": "integer", "minimum": 0 },
     "heartbeatTimeoutMs": { "type": "integer", "minimum": 1 },
     "pairingCode": { "type": "string", "pattern": "^[0-9]{8}$" },
-    "token": { "type": "string", "minLength": 24 }
+    "token": { "type": "string", "minLength": 24 },
+    "includeAvatars": { "type": "boolean" },
+    "generatedAt": { "type": "string" },
+    "full": { "type": "boolean" },
+    "name": { "type": "string", "maxLength": 80 },
+    "avatarBase64": { "type": "string" },
+    "memberCount": { "type": "integer", "minimum": 0 },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["talker", "name", "avatarBase64", "memberCount"],
+        "properties": {
+          "talker": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "name": { "type": "string", "maxLength": 80 },
+          "avatarBase64": { "type": "string" },
+          "memberCount": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "privates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["talker", "name", "avatarBase64"],
+        "properties": {
+          "talker": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "name": { "type": "string", "maxLength": 80 },
+          "avatarBase64": { "type": "string" }
+        }
+      }
+    },
+    "privateContacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["talker", "name", "avatarBase64"],
+        "properties": {
+          "talker": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "name": { "type": "string", "maxLength": 80 },
+          "avatarBase64": { "type": "string" }
+        }
+      }
+    }
   },
   "allOf": [
     {
@@ -63,6 +107,14 @@
     {
       "if": { "properties": { "type": { "const": "command_result" } } },
       "then": { "required": ["deviceId", "commandId", "ok"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "refresh_contacts" } } },
+      "then": { "required": ["commandId"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "contacts_snapshot" } } },
+      "then": { "required": ["commandId", "generatedAt", "groups", "privateContacts"] }
     }
   ],
   "additionalProperties": true

@@ -32,6 +32,7 @@ final class Wechat8070Adapter {
     }
 
     static void installInbound(ClassLoader classLoader) throws Throwable {
+        ADAPTER_CLASSLOADER = classLoader;
         Class<?> messageClass = XposedHelpers.findClass(MESSAGE_CLASS, classLoader);
         Class<?> addMsgClass = XposedHelpers.findClass(ADD_MSG_CLASS, classLoader);
         int installed = 0;
@@ -52,6 +53,8 @@ final class Wechat8070Adapter {
                 "storage-dispatcher");
         installed += hookLegacyStoragePaths(classLoader, messageClass);
         installed += hookContactEntity(classLoader);
+        installed += hookContactStorage(classLoader);
+        installed += hookChatroomStorage(classLoader);
         if (installed == 0) {
             throw new NoSuchMethodException("No documented 8.0.70 inbound path found");
         }
@@ -1427,7 +1430,7 @@ final class Wechat8070Adapter {
     }
 
     /** Hook Contact 实体（pl.f2 = rcontact 表）的 getter 方法：微信渲染会话列表
-     *  必然调用，捕获实例缓存群名（field_nickname）。 */
+     *  必然调用，捕获实例缓存群名（field_nickname）与全量联系人（快照用）。 */
     private static int hookContactEntity(ClassLoader classLoader) {
         try {
             Class<?> contactClass = XposedHelpers.findClass("pl.f2", classLoader);
@@ -1438,16 +1441,23 @@ final class Wechat8070Adapter {
                         Object contact = param.thisObject;
                         String username = (String) XposedHelpers
                                 .getObjectField(contact, "field_username");
-                        if (username == null || !username.toLowerCase(
-                                java.util.Locale.ROOT).endsWith("@chatroom")) {
+                        if (username == null || username.isEmpty()) {
                             return;
                         }
                         Object nickname = XposedHelpers.getObjectField(
                                 contact, "field_nickname");
-                        if (nickname instanceof String
-                                && !((String) nickname).isEmpty()) {
-                            GROUP_NAME_CACHE.put(username, (String) nickname);
+                        String nicknameValue = nickname instanceof String
+                                ? (String) nickname : "";
+                        if (username.toLowerCase(java.util.Locale.ROOT)
+                                .endsWith("@chatroom")
+                                && !nicknameValue.isEmpty()) {
+                            GROUP_NAME_CACHE.put(username, nicknameValue);
                         }
+                        Object conRemark = XposedHelpers.getObjectField(
+                                contact, "field_conRemark");
+                        cacheContact(username, nicknameValue,
+                                conRemark instanceof String
+                                        ? (String) conRemark : "");
                     } catch (Throwable ignored) {
                     }
                 }
@@ -1473,6 +1483,576 @@ final class Wechat8070Adapter {
             return hooked > 0 ? 1 : 0;
         } catch (Throwable ignored) {
             return 0;
+        }
+    }
+
+    /** 联系人快照缓存条目（Hook 观测到的 Contact 实体快照）。 */
+    static final class ContactEntry {
+        String nickname;
+        String conRemark;
+        long lastSeenAt;
+    }
+
+    /** 全量联系人缓存（talker → 观测快照）。由 pl.f2 getter hook 填充，
+     *  只包含微信实际渲染过的联系人——快照语义为「Hook 观测集」，非数据库枚举。 */
+    private static final java.util.Map<String, ContactEntry> CONTACT_CACHE =
+            new ConcurrentHashMap<>();
+    private static final int CONTACT_CACHE_MAX = 2000;
+    private static volatile int contactCachePuts;
+
+    private static void cacheContact(String talker, String nickname, String conRemark) {
+        ContactEntry entry = new ContactEntry();
+        entry.nickname = nickname == null ? "" : nickname;
+        entry.conRemark = conRemark == null ? "" : conRemark;
+        entry.lastSeenAt = System.currentTimeMillis();
+        CONTACT_CACHE.put(talker, entry);
+        if (++contactCachePuts % 50 == 0) {
+            trimContactCache();
+        }
+    }
+
+    /** 缓存超限时按最近渲染时间淘汰最旧条目（观察集有界，防泄漏）。 */
+    private static void trimContactCache() {
+        if (CONTACT_CACHE.size() <= CONTACT_CACHE_MAX) {
+            return;
+        }
+        java.util.List<java.util.Map.Entry<String, ContactEntry>> entries =
+                new java.util.ArrayList<>(CONTACT_CACHE.entrySet());
+        entries.sort(java.util.Comparator.comparingLong(
+                (java.util.Map.Entry<String, ContactEntry> e) -> e.getValue().lastSeenAt));
+        int excess = entries.size() - CONTACT_CACHE_MAX;
+        for (int i = 0; i < excess; i++) {
+            CONTACT_CACHE.remove(entries.get(i).getKey());
+        }
+    }
+
+    /** 私聊快照合法性：过滤公众号/系统账号/文件传输助手/无效 talker/机器人自己。 */
+    private static boolean validSnapshotPrivate(String talker, String ownWxid) {
+        if (talker == null) {
+            return false;
+        }
+        String lower = talker.toLowerCase(java.util.Locale.ROOT);
+        if (lower.isEmpty() || lower.length() > 256) {
+            return false;
+        }
+        if (lower.endsWith("@chatroom") || lower.endsWith("@openim")) {
+            return false;
+        }
+        if (lower.startsWith("gh_")) {
+            return false; // 公众号
+        }
+        if (lower.equals("filehelper") || lower.equals("newsapp")
+                || lower.equals("fmessage") || lower.equals("weixin")) {
+            return false; // 系统账号/文件传输助手
+        }
+        if (lower.contains(":")) {
+            return false; // 无效 talker（notify:/群 ID 冒号等）
+        }
+        if (ownWxid != null && !ownWxid.isEmpty()
+                && lower.equals(ownWxid.toLowerCase(java.util.Locale.ROOT))) {
+            return false; // 机器人自己
+        }
+        return true;
+    }
+
+    private static boolean validSnapshotGroup(String talker) {
+        if (talker == null) {
+            return false;
+        }
+        String lower = talker.toLowerCase(java.util.Locale.ROOT);
+        return lower.endsWith("@chatroom")
+                && !lower.contains(":")
+                && lower.length() <= 256;
+    }
+
+    private static String limitedName(String value, String fallback) {
+        String normalized = value == null ? "" : value.replaceAll("\\s+", " ").trim();
+        if (normalized.isEmpty()) {
+            normalized = fallback;
+        }
+        return normalized.length() > 80 ? normalized.substring(0, 80) : normalized;
+    }
+
+    /** 快照构建结果：JSON 载荷 + 完整性标记（full）。 */
+    static final class SnapshotBuildResult {
+        final String json;
+        final boolean full;
+
+        SnapshotBuildResult(String json, boolean full) {
+            this.json = json;
+            this.full = full;
+        }
+    }
+
+    /** 枚举结果行（rcontact 快照）。 */
+    private static final class ContactRow {
+        String talker;
+        String nickname;
+        String conRemark;
+    }
+
+    /** Adapter 运行时的微信 ClassLoader（installInbound 时记录）。 */
+    private static volatile ClassLoader ADAPTER_CLASSLOADER;
+
+    /** 联系人存储单例（com.tencent.mm.storage.d4），hook 捕获或服务定位获取。 */
+    private static volatile Object CONTACT_STORAGE;
+
+    /** Hook ContactStorage（com.tencent.mm.storage.d4）全部方法捕获实例：
+     *  微信渲染会话/消息时必然查询联系人，捕获后 refresh 可直接主动枚举。 */
+    private static int hookContactStorage(ClassLoader classLoader) {
+        try {
+            Class<?> storageClass = XposedHelpers.findClass(
+                    "com.tencent.mm.storage.d4", classLoader);
+            XC_MethodHook capture = new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    if (param.thisObject != null) {
+                        CONTACT_STORAGE = param.thisObject;
+                    }
+                }
+            };
+            int hooked = 0;
+            for (Method method : storageClass.getDeclaredMethods()) {
+                try {
+                    method.setAccessible(true);
+                    XposedBridge.hookMethod(method, capture);
+                    hooked++;
+                } catch (Throwable ignored) {
+                }
+            }
+            WechatHook.logAdapterInfo(
+                    "8.0.70 contact storage hook installed methods=" + hooked);
+            return hooked > 0 ? 1 : 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    /** ChatroomStorage（com.tencent.mm.storage.u2，classes9.dex）——群成员关系
+     *  权威存储（chatroom 表）。hook 捕获实例：构造需 f35/i0 DAO 注入（无法无参
+     *  new），微信渲染群资料/处理群消息时必然查询 chatroom 表。 */
+    private static volatile Object CHATROOM_STORAGE;
+
+    /** Hook ChatroomStorage 全部方法捕获实例（与 hookContactStorage 同模式）。 */
+    private static int hookChatroomStorage(ClassLoader classLoader) {
+        try {
+            Class<?> storageClass = XposedHelpers.findClass(
+                    "com.tencent.mm.storage.u2", classLoader);
+            XC_MethodHook capture = new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    if (param.thisObject != null) {
+                        CHATROOM_STORAGE = param.thisObject;
+                    }
+                }
+            };
+            int hooked = 0;
+            for (Method method : storageClass.getDeclaredMethods()) {
+                try {
+                    method.setAccessible(true);
+                    XposedBridge.hookMethod(method, capture);
+                    hooked++;
+                } catch (Throwable ignored) {
+                }
+            }
+            WechatHook.logAdapterInfo(
+                    "8.0.70 chatroom storage hook installed methods=" + hooked);
+            return hooked > 0 ? 1 : 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    /** ChatroomStorage 实例（hook 捕获；无 DAO 无法自行构造）。 */
+    private static Object resolveChatroomStorage() {
+        return CHATROOM_STORAGE;
+    }
+
+    /** 服务定位：yj0.j1.s(sc3.x3) → h2 → Tg() → ContactStorage（d4）。
+     *  优先用 hook 捕获的实例（微信启动后必然查询联系人）。 */
+    private static Object resolveContactStorage() {
+        Object cached = CONTACT_STORAGE;
+        if (cached != null) {
+            return cached;
+        }
+        ClassLoader cl = ADAPTER_CLASSLOADER;
+        if (cl == null) {
+            return null;
+        }
+        try {
+            Class<?> locator = XposedHelpers.findClass("yj0.j1", cl);
+            Class<?> key = XposedHelpers.findClass("sc3.x3", cl);
+            Method s = null;
+            for (Method m : locator.getDeclaredMethods()) {
+                if ("s".equals(m.getName())
+                        && m.getParameterTypes().length == 1
+                        && m.getParameterTypes()[0] == Class.class) {
+                    s = m;
+                    break;
+                }
+            }
+            if (s == null) {
+                return null;
+            }
+            s.setAccessible(true);
+            Object service = s.invoke(null, key);
+            if (service == null) {
+                return null;
+            }
+            Object storage = XposedHelpers.callMethod(service, "Tg");
+            if (storage != null) {
+                CONTACT_STORAGE = storage;
+            }
+            return storage;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** 静默联系人快照 v3（2026-08-13）：主动枚举微信通讯录。
+     *  数据源 = ContactStorage（com.tencent.mm.storage.d4）两条权威查询：
+     *  群聊 d4.r()：SELECT ... FROM rcontact WHERE type & 8=0 AND username LIKE '%@chatroom'
+     *  私聊 d4.J(1,false)：SELECT ... WHERE (type & 1!=0) AND type & 32=0 AND type >= 1
+     *  deleteFlag!=0 的软删除行跳过——这是「当前有效联系人」。
+     *  ⚠️ rcontact 行 ≠ 「仍在群内」：真机实测已退群群（58483015293@chatroom）
+     *  type=2 deleteFlag=0 chatroomFlag=0 仍存在于 rcontact。群必须再过权威判据：
+     *  chatroom 表行存在（ChatroomStorage.u2.i1 非 null）且 memberlist 含自己 wxid
+     *  （u2.o1 成员列表）——退群时微信调 u2.h1（delete from chatroom where
+     *  chatroomname=?）删除本地行。判定失败/实例不可得 → full=false（不冒险删数据）。
+     *  不发送消息、不切界面、不重连。 */
+    static SnapshotBuildResult buildContactsSnapshot(
+            boolean includeAvatars, String ownWxid) {
+        final int avatarBudget = 600_000; // Binder ~1MB 限制内留余量
+        java.util.List<ContactRow> enumerated = new java.util.ArrayList<>();
+        java.util.List<ContactRow> groupRows = new java.util.ArrayList<>();
+        boolean storageOk = false;
+        boolean groupsComplete = false;
+        boolean privatesComplete = false;
+        boolean membershipVerified = false;
+        try {
+            Object storage = resolveContactStorage();
+            if (storage != null) {
+                storageOk = true;
+                // 群聊（type & 8=0 AND username LIKE '%@chatroom'）
+                groupsComplete = fillFromCursor(
+                        (android.database.Cursor) XposedHelpers.callMethod(
+                                storage, "r"),
+                        groupRows, true);
+                // 私聊通讯录（type & 1!=0 AND type & 32=0 AND type >= 1）
+                privatesComplete = fillFromCursor(
+                        (android.database.Cursor) XposedHelpers.callMethod(
+                                storage, "J", 1, false),
+                        enumerated, false);
+                // 权威群成员判据：chatroom 行存在 + memberlist 含自己
+                Object chatroomStorage = resolveChatroomStorage();
+                if (chatroomStorage != null) {
+                    membershipVerified = filterActiveGroups(
+                            chatroomStorage, groupRows, ownWxid);
+                } else {
+                    WechatHook.logAdapterInfo(
+                            "contacts membership check unavailable"
+                                    + " — chatroom storage not captured, full=false");
+                }
+                enumerated.addAll(groupRows);
+            }
+        } catch (Throwable error) {
+            enumerated.clear();
+            storageOk = false;
+            groupsComplete = false;
+            privatesComplete = false;
+            membershipVerified = false;
+            WechatHook.logAdapterError("contacts enumeration failed", error);
+        }
+        boolean complete = storageOk && groupsComplete && privatesComplete
+                && membershipVerified;
+        // 完整性保护：两条枚举都成功但结果为空、观测缓存却非空 → 可疑空结果，full=false
+        if (complete && enumerated.isEmpty() && !CONTACT_CACHE.isEmpty()) {
+            complete = false;
+            WechatHook.logAdapterInfo(
+                    "contacts enumeration empty but observed cache populated — full=false");
+        }
+        if (!complete) {
+            WechatHook.logAdapterInfo(
+                    "contacts snapshot incomplete full=false groups=" + groupsComplete
+                            + " privates=" + privatesComplete
+                            + " membership=" + membershipVerified);
+        }
+        return buildSnapshotJson(
+                complete ? enumerated : null,
+                includeAvatars, ownWxid, complete, avatarBudget);
+    }
+
+    /** 权威群成员过滤（rcontact 群 ∩ chatroom 表权威记录）：
+     *  仅保留 chatroom 行存在且 memberlist 含自己 wxid 的群。
+     *  任一群判定异常 → 整体判定失败（抛错，调用方置 full=false，
+     *  绝不以未验证的过滤规则上报完整快照）。 */
+    private static boolean filterActiveGroups(
+            Object chatroomStorage,
+            java.util.List<ContactRow> groupRows, String ownWxid) {
+        java.util.List<ContactRow> active = new java.util.ArrayList<>();
+        for (ContactRow row : groupRows) {
+            if (isActiveChatroomMember(chatroomStorage, row.talker, ownWxid)) {
+                active.add(row);
+            }
+        }
+        groupRows.clear();
+        groupRows.addAll(active);
+        return true;
+    }
+
+    /** 权威群成员判据（8.0.70 逆向定案，dexdump 静态定位）：
+     *  ① u2.i1(talker) → Chatroom 实体，chatroom 表无行返回 null；
+     *  ② u2.o1(talker) → memberlist（";" 分隔 wxid）拆分的成员列表，必须含自己。
+     *  只调用只读查询（i1/o1 内部 select，无副作用）；h1(删除)/n1(更新)/O1(写)
+     *  绝不调用。 */
+    private static boolean isActiveChatroomMember(
+            Object storage, String talker, String ownWxid) {
+        boolean exists;
+        boolean hasSelf = false;
+        try {
+            Object chatroom = XposedHelpers.callMethod(storage, "i1", talker);
+            exists = chatroom != null;
+            if (exists && ownWxid != null && !ownWxid.isEmpty()) {
+                Object members = XposedHelpers.callMethod(storage, "o1", talker);
+                if (members instanceof java.util.List) {
+                    hasSelf = ((java.util.List<?>) members).contains(ownWxid);
+                }
+            }
+        } catch (Throwable error) {
+            throw error instanceof RuntimeException
+                    ? (RuntimeException) error : new IllegalStateException(error);
+        }
+        return exists && hasSelf;
+    }
+
+    /** 遍历游标收集联系人行（deleteFlag!=0 跳过）；游标非空且完整遍历 → true。
+     *  onlyGroups=true 只收 @chatroom 群行，false 只收个人行（群行交给权威判据）。 */
+    private static boolean fillFromCursor(
+            android.database.Cursor cursor,
+            java.util.List<ContactRow> out,
+            boolean onlyGroups) {
+        if (cursor == null) {
+            return false;
+        }
+        try {
+            int usernameIdx = cursor.getColumnIndex("username");
+            int nicknameIdx = cursor.getColumnIndex("nickname");
+            int conRemarkIdx = cursor.getColumnIndex("conRemark");
+            int deleteFlagIdx = cursor.getColumnIndex("deleteFlag");
+            if (usernameIdx < 0) {
+                return false;
+            }
+            if (cursor.moveToFirst()) {
+                do {
+                    if (deleteFlagIdx >= 0
+                            && cursor.getInt(deleteFlagIdx) != 0) {
+                        continue; // 已删除/已退群（软删除行）
+                    }
+                    String username = cursor.getString(usernameIdx);
+                    if (username == null || username.trim().isEmpty()) {
+                        continue;
+                    }
+                    String trimmed = username.trim();
+                    boolean isGroup = trimmed.endsWith("@chatroom");
+                    if (isGroup != onlyGroups) {
+                        continue;
+                    }
+                    ContactRow row = new ContactRow();
+                    row.talker = trimmed;
+                    row.nickname = nicknameIdx >= 0
+                            ? cursor.getString(nicknameIdx) : null;
+                    row.conRemark = conRemarkIdx >= 0
+                            ? cursor.getString(conRemarkIdx) : null;
+                    if (row.nickname == null) {
+                        row.nickname = "";
+                    }
+                    if (row.conRemark == null) {
+                        row.conRemark = "";
+                    }
+                    out.add(row);
+                } while (cursor.moveToNext());
+            }
+            return true;
+        } catch (Throwable error) {
+            WechatHook.logAdapterError("contacts cursor read failed", error);
+            return false;
+        } finally {
+            try {
+                cursor.close();
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private static SnapshotBuildResult buildSnapshotJson(
+            java.util.List<ContactRow> rows,
+            boolean includeAvatars,
+            String ownWxid,
+            boolean full,
+            int avatarBudget) {
+        org.json.JSONArray groups = new org.json.JSONArray();
+        org.json.JSONArray privates = new org.json.JSONArray();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        if (rows != null) {
+            for (ContactRow row : rows) {
+                appendSnapshotRow(groups, privates, seen, row, ownWxid);
+            }
+        } else {
+            // 兜底：Hook 观测缓存（不保证完整，full=false）
+            for (java.util.Map.Entry<String, ContactEntry> entry
+                    : CONTACT_CACHE.entrySet()) {
+                ContactRow row = new ContactRow();
+                row.talker = entry.getKey();
+                ContactEntry contact = entry.getValue();
+                row.nickname = contact == null ? "" : contact.nickname;
+                row.conRemark = contact == null ? "" : contact.conRemark;
+                appendSnapshotRow(groups, privates, seen, row, ownWxid);
+            }
+        }
+        if (includeAvatars) {
+            long used = fillAvatars(groups, avatarBudget);
+            fillAvatars(privates, avatarBudget - Math.min(used, avatarBudget));
+        }
+        String json = snapshotJson(groups, privates);
+        // Binder 兜底：带头像超阈值（~900KB）则整体降级为无头像快照，
+        // 保证联系人数据永远完整可达（头像只是增强信息）。
+        if (json.length() > 900_000) {
+            for (int i = 0; i < groups.length(); i++) {
+                org.json.JSONObject group = groups.optJSONObject(i);
+                if (group != null) {
+                    putJson(group, "avatarBase64", "");
+                }
+            }
+            for (int i = 0; i < privates.length(); i++) {
+                org.json.JSONObject priv = privates.optJSONObject(i);
+                if (priv != null) {
+                    putJson(priv, "avatarBase64", "");
+                }
+            }
+            json = snapshotJson(groups, privates);
+        }
+        WechatHook.logAdapterInfo("contacts snapshot built full=" + full
+                + " groups=" + groups.length() + " privates=" + privates.length()
+                + " bytes=" + json.length());
+        return new SnapshotBuildResult(json, full);
+    }
+
+    private static void appendSnapshotRow(
+            org.json.JSONArray groups,
+            org.json.JSONArray privates,
+            java.util.Set<String> seen,
+            ContactRow row,
+            String ownWxid) {
+        String talker = row.talker;
+        if (talker == null || talker.isEmpty() || !seen.add(talker)) {
+            return;
+        }
+        if (validSnapshotGroup(talker)) {
+            org.json.JSONObject group = new org.json.JSONObject();
+            putJson(group, "talker", talker);
+            putJson(group, "name", limitedName(row.nickname, "微信群"));
+            putJson(group, "avatarBase64", "");
+            putJson(group, "memberCount", 0);
+            groups.put(group);
+        } else if (validSnapshotPrivate(talker, ownWxid)) {
+            org.json.JSONObject priv = new org.json.JSONObject();
+            putJson(priv, "talker", talker);
+            String name = !row.conRemark.isEmpty() ? row.conRemark : row.nickname;
+            putJson(priv, "name", limitedName(name, "联系人"));
+            putJson(priv, "avatarBase64", "");
+            privates.put(priv);
+        }
+    }
+
+    private static String snapshotJson(
+            org.json.JSONArray groups, org.json.JSONArray privates) {
+        org.json.JSONObject snapshot = new org.json.JSONObject();
+        putJson(snapshot, "generatedAt",
+                java.time.Instant.now().toString());
+        putJson(snapshot, "groups", groups);
+        // 通讯录定义：rcontact 中 deleteFlag=0 的个人联系人（不混入最近会话）
+        putJson(snapshot, "privateContacts", privates);
+        return snapshot.toString();
+    }
+
+    /** 尽力填充头像（base64）；累计超预算即停止填充剩余头像（联系人条目保留）。
+     *  单头像读取/压缩失败 → 空字符串，不影响同步。 */
+    private static long fillAvatars(org.json.JSONArray entries, long budget) {
+        long used = 0;
+        for (int i = 0; i < entries.length(); i++) {
+            org.json.JSONObject entry = entries.optJSONObject(i);
+            if (entry == null) {
+                continue;
+            }
+            String b64 = readAvatarBase64(entry.optString("talker", ""));
+            if (b64.isEmpty()) {
+                continue;
+            }
+            if (used + b64.length() > budget) {
+                return budget + 1; // 预算耗尽，剩余头像全部留空
+            }
+            used += b64.length();
+            putJson(entry, "avatarBase64", b64);
+        }
+        return used;
+    }
+
+    /** 头像本地文件 → 小尺寸 JPEG → base64。任何失败返回空串（不得拖垮同步）。 */
+    private static String readAvatarBase64(String talker) {
+        if (talker == null || talker.isEmpty()) {
+            return "";
+        }
+        try {
+            String md5 = WechatHook.md5Hex(talker);
+            if (md5.length() != 32) {
+                return "";
+            }
+            String p1 = md5.substring(0, 2);
+            String p2 = md5.substring(2, 4);
+            java.io.File microMsg = new java.io.File(
+                    "/data/data/com.tencent.mm/MicroMsg");
+            java.io.File[] userDirs = microMsg.listFiles();
+            if (userDirs == null) {
+                return "";
+            }
+            java.io.File avatarFile = null;
+            for (java.io.File dir : userDirs) {
+                if (!dir.isDirectory() || dir.getName().length() != 32) {
+                    continue;
+                }
+                java.io.File base = new java.io.File(
+                        new java.io.File(new java.io.File(dir, "avatar"), p1), p2);
+                java.io.File normal = new java.io.File(base, "user_" + md5 + ".png");
+                java.io.File hd = new java.io.File(base, "user_hd_" + md5 + ".png");
+                if (normal.isFile() && normal.length() > 0) {
+                    avatarFile = normal;
+                    break;
+                }
+                if (hd.isFile() && hd.length() > 0) {
+                    avatarFile = hd;
+                    break;
+                }
+            }
+            if (avatarFile == null) {
+                return "";
+            }
+            byte[] jpeg = WechatHook.compressToJpeg(avatarFile, 64, 50);
+            if (jpeg == null || jpeg.length == 0) {
+                return "";
+            }
+            return android.util.Base64.encodeToString(
+                    jpeg, android.util.Base64.NO_WRAP);
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private static void putJson(
+            org.json.JSONObject object, String key, Object value) {
+        try {
+            object.put(key, value);
+        } catch (org.json.JSONException impossible) {
+            throw new IllegalStateException(impossible);
         }
     }
 

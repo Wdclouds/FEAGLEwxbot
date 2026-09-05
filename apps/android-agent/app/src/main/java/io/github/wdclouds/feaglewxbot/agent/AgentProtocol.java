@@ -10,6 +10,8 @@ final class AgentProtocol {
     static final int MSG_PRIVATE_IMAGE = 7;
     static final int MSG_GROUP_IMAGE = 8;
     static final int MSG_SELF_AVATAR = 9;
+    static final int MSG_REFRESH_CONTACTS = 10;
+    static final int MSG_CONTACTS_SNAPSHOT = 11;
 
     static final String PREFS = "agent";
     static final String KEY_ENDPOINT = "endpoint";
