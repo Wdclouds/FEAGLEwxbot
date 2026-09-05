@@ -22,6 +22,10 @@
       </div>
       <img id="brand-logo" class="brand-logo" alt="FEAGLE" src="/assets/icons/feaglew.svg" role="button" aria-label="FEAGLE Logo" aria-disabled="true">
       <div class="header-tools">
+        <button class="button pair-device-btn" id="open-pair-modal" type="button" title="扫码连接平板设备">
+          <span class="btn-icon">📱</span>
+          <span>连接设备</span>
+        </button>
         <button class="icon-button theme-toggle" id="theme-toggle" type="button" aria-label="切换主题">
           <span id="theme-label">夜间 / Dark</span>
         </button>
@@ -251,8 +255,40 @@
       <a href="#/traffic" data-view-link="traffic"><span class="nav-cn">日志</span></a>
       <a href="#/groups" data-view-link="groups"><span class="nav-cn">消息</span></a>
       <a href="#/settings-traffic" data-view-link="settings-traffic"><span class="nav-cn">流量安全</span></a>
+      <a href="#/plugins" id="nav-plugins" data-view-link="plugins" hidden><span class="nav-cn">插件与配置</span></a>
     </div>
   </nav>
+
+  <!-- ══════════ 弹窗 · 平板扫码免密配对 ══════════ -->
+  <div id="pair-modal" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <strong>📱 平板设备免密扫码配对</strong>
+        <button id="close-pair-modal" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">打开平板端 FEAGLE Agent，点击首页 <b>【扫码连接服务器】</b> 并对准下方二维码：</p>
+        <div class="qr-container">
+          <img id="pair-qr-img" class="pair-qr-img" alt="配对二维码" src="" />
+          <div id="pair-qr-loading" class="pair-qr-loading">生成安全配对码中...</div>
+        </div>
+        <div class="pair-info-box">
+          <div><small>连接节点:</small> <span id="pair-endpoint">--</span></div>
+          <div><small>设备状态:</small> <span id="pair-device-state" class="status-badge">等待扫码</span></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="refresh-pair-code" class="button hollow" type="button">刷新二维码</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 视图 5 · AstrBot 插件后台内嵌 (自适应激活) ══════════ -->
+  <section class="view" data-view="plugins" hidden>
+    <div class="astrbot-frame-wrap">
+      <iframe id="astrbot-iframe" src="about:blank" title="AstrBot 管理后台"></iframe>
+    </div>
+  </section>
 
   <script src="/app.js?v=contactclick20260813"></script>
   <script src="/pixel-blast.js?v=themeroute20260813"></script>

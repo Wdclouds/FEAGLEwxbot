@@ -8,6 +8,46 @@ const mutationHeaders = {
   'X-FEAGLE-Dashboard': '1',
 };
 
+test('dashboard refreshes contacts only through an authorized manual POST', async (t) => {
+  const state = new RuntimeState();
+  let calls = 0;
+  const dashboard = new DashboardServer({
+    state,
+    host: '127.0.0.1',
+    port: 0,
+    async refreshContacts(options) {
+      calls += 1;
+      assert.deepEqual(options, { includeAvatars: true });
+      state.setContacts({
+        status: 'READY',
+        groups: [{ talker: 'group@chatroom', name: '测试群', avatarBase64: '', memberCount: 2 }],
+        privates: [{ talker: 'wxid_friend', name: '好友', avatarBase64: '' }],
+        counts: { groups: 1, privates: 1, inserted: 2, updated: 0, deleted: 0 },
+        error: '',
+      });
+      return { groups: 1, privates: 1, inserted: 2, updated: 0, deleted: 0 };
+    },
+  });
+  await dashboard.start();
+  t.after(() => dashboard.stop());
+  const { port } = dashboard.server.address();
+  const url = `http://127.0.0.1:${port}/api/contacts/refresh`;
+
+  assert.equal((await fetch(url)).status, 405);
+  assert.equal((await fetch(url, { method: 'POST' })).status, 403);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'X-FEAGLE-Dashboard': '1' },
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(calls, 1);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.result.groups, 1);
+  assert.equal(payload.state.contacts.privates.length, 1);
+});
+
 test('dashboard test-mode endpoint toggles the schedule override', async (t) => {
   const state = new RuntimeState();
   const dashboard = new DashboardServer({
@@ -55,6 +95,10 @@ test('dashboard exposes separate liveness and readiness endpoints', async (t) =>
   t.after(() => dashboard.stop());
 
   const { port } = dashboard.server.address();
+  const index = await fetch(`http://127.0.0.1:${port}/`);
+  assert.equal(index.status, 200);
+  assert.match(await index.text(), /<!doctype html>/i);
+
   const live = await fetch(`http://127.0.0.1:${port}/api/health/live`);
   assert.equal(live.status, 200);
 
@@ -62,10 +106,11 @@ test('dashboard exposes separate liveness and readiness endpoints', async (t) =>
   assert.equal(notReady.status, 503);
 
   state.patch('wechat', { status: 'ONLINE', protocolHealth: 'HEALTHY' });
-  state.patch('astrbot', { status: 'READY' });
+  state.patch('hermes', { status: 'READY' });
   state.patch('onebot', { status: 'CONNECTED' });
   const ready = await fetch(`http://127.0.0.1:${port}/api/health/ready`);
   assert.equal(ready.status, 200);
+  assert.equal((await ready.json()).hermes, 'READY');
 });
 
 test('dashboard sends a Feishu notification test through a POST-only endpoint', async (t) => {
@@ -99,48 +144,6 @@ test('dashboard sends a Feishu notification test through a POST-only endpoint', 
   const payload = await response.json();
   assert.equal(calls, 1);
   assert.equal(payload.notifications.lastType, 'TEST');
-});
-
-test('dashboard force-relogin endpoint requires explicit confirmation', async (t) => {
-  const state = new RuntimeState();
-  let calls = 0;
-  const dashboard = new DashboardServer({
-    state,
-    host: '127.0.0.1',
-    port: 0,
-    async forceWechatRelogin() {
-      calls += 1;
-      state.patch('wechat', {
-        status: 'LOGGED_OUT',
-        reloginTestStatus: 'RUNNING',
-      });
-      return state.snapshot();
-    },
-  });
-  await dashboard.start();
-  t.after(() => dashboard.stop());
-
-  const { port } = dashboard.server.address();
-  const getResponse = await fetch(`http://127.0.0.1:${port}/api/wechat/force-relogin`);
-  assert.equal(getResponse.status, 405);
-
-  const rejected = await fetch(`http://127.0.0.1:${port}/api/wechat/force-relogin`, {
-    method: 'POST',
-    headers: mutationHeaders,
-    body: JSON.stringify({ confirm: 'no' }),
-  });
-  assert.equal(rejected.status, 400);
-  assert.equal(calls, 0);
-
-  const accepted = await fetch(`http://127.0.0.1:${port}/api/wechat/force-relogin`, {
-    method: 'POST',
-    headers: mutationHeaders,
-    body: JSON.stringify({ confirm: 'FORCE_LOGOUT' }),
-  });
-  assert.equal(accepted.status, 202);
-  assert.equal(calls, 1);
-  const payload = await accepted.json();
-  assert.equal(payload.wechat.reloginTestStatus, 'RUNNING');
 });
 
 test('dashboard persists an explicitly confirmed manual-offline mode', async (t) => {
@@ -232,7 +235,7 @@ test('dashboard group reply mode is fail-closed and requires confirmation', asyn
 
 test('dashboard settings API hides secrets and protects mutations', async (t) => {
   const state = new RuntimeState();
-  let settings = { transport: 'wechat4u', quietHours: '00:00-07:00' };
+  let settings = { transport: 'android', quietHours: '00:00-07:00' };
   const dashboard = new DashboardServer({
     state,
     host: '127.0.0.1',

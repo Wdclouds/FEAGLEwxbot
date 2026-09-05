@@ -1,0 +1,18 @@
+services:
+  mnemosyne-db:
+    image: pgvector/pgvector:pg16
+    container_name: feagle-mnemosyne-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MNEMOSYNE_DB_USER:-hermes}
+      POSTGRES_PASSWORD: ${MNEMOSYNE_DB_PASSWORD:-hermes_secure_password_2026}
+      POSTGRES_DB: ${MNEMOSYNE_DB_NAME:-mnemosyne}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/mnemosyne-db:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 220M

@@ -1,153 +1,137 @@
-# FEAGLEwxbot
+# FEAGLE WxBot 微信 AI 智能体生态全栈套件
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+<p align="center">
+  <b>模块完全解耦 · 自由选大脑 · 自适应控制台 · 平板扫码免密配对 · 工业级防封流控</b>
+</p>
 
-一个面向个人自托管场景的微信机器人 Monorepo。它把微信消息转换成 OneBot v11 事件交给
-AstrBot，并把回复沿原通道送回微信。
+---
+
+## 🌟 系统架构概览
+
+FEAGLE WxBot 是专为企业与极客社群设计的高性能微信智能体生态系统。架构遵循**“核心中枢主板与下游大脑绝对隔离、零代码和泥、独立升级”**原则：
 
 ```text
-Wechat4u ─┐
-          ├─ FEAGLE Bridge ⇄ OneBot v11 ⇄ AstrBot
-Android ──┘
+                     ┌────────────────────────────────────────────────────────┐
+                     │            物理设备 (SM-X200 / 备用安卓机)              │
+                     │          FEAGLE Android Agent (WechatHook.java)        │
+                     └──────────────────────────┬─────────────────────────────┘
+                                                │ (WebSocket 6191)
+                                                ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                   【FEAGLE WeChat Bridge】(中枢主板 / 微信协议网关 / 6190)                 │
+│  - 微信协议转换为 OneBot v11 标准事件/动作                                                 │
+│  - 微信特有逻辑: 防封控频、群策略(艾特/接收/关)、SQLite 身份映射、联系人持久化             │
+│  - 本地轻量指令插件引擎 (apps/plugins: 拦截 /前缀快速指令，0 Token 毫秒级秒回)             │
+│  - 统一自适应 Web 控制台: 根据激活的后端动态切换视图，绝不产生界面冲突                    │
+└───────────────────────────────────────┬──────────────────────────────────────────────────┘
+                                        │
+                 ┌──────────────────────┴──────────────────────┐
+                 │ (按 BOT_BACKEND 配置二选一，绝对解耦，不和泥) │
+                 ▼                                             ▼
+  【选择 A: Hermes 智能体栈】                    【选择 B: AstrBot 插件栈】
+  ┌───────────────────────────────┐              ┌───────────────────────────────┐
+  │ Hermes Agent Gateway (6199)   │              │ AstrBot 官方容器 (6185)       │
+  │  - 自主思考 / 复杂工具调用    │              │  - 丰富现成社群插件生态       │
+  │  - 专属技能库 (SKILL.md)      │              │  - 娱乐小游戏 / 自动群管      │
+  │  - 渠道模型覆盖绑定           │              │  - 自带可视化配置市场         │
+  ├───────────────────────────────┤              └───────────────────────────────┘
+  │ Mnemosyne 记忆系统 (18010)    │                     (只启动 AstrBot 容器，
+  │  - 长期记忆/每日4点自动整理   │                      内存开销仅 ~150M，
+  │  - 成员性格画像 (Personas)    │                      极度适合 1.6G 轻量服务器)
+  │  - pgvector 向量存储 (5432)   │
+  └───────────────────────────────┘
 ```
 
-项目提供两种互斥的微信接入方式：
+---
 
-- `Wechat4u`：部署步骤少，通过 Dashboard 显示二维码。
-- `Android Agent`：固定适配微信 `8.0.70`，由已 Root Android 设备主动连接 Bridge。
+## 🚀 极速一键部署 (Linux)
 
-两条链路目前都支持私聊文本和受控群聊文本。相同微信账号一次只能启用一个接入方式，
-避免重复投递和重复回复。
+适用环境: Ubuntu 20.04+ / Debian 11+ / CentOS 8+ / RHEL 9+
 
-> [!WARNING]
-> 本项目使用非官方微信接入方式，可能受到登录策略、客户端版本和账号风控影响。
-> 请使用能够承担掉线或限制风险的账号。本项目不隶属于微信、腾讯或 AstrBot。
-
-## Monorepo 模块
-
-| 模块 | 位置 | 独立产物 |
-| --- | --- | --- |
-| Bridge 与 Dashboard | [`apps/bridge/`](./apps/bridge/) | Docker 镜像 |
-| Android Agent | [`apps/android-agent/`](./apps/android-agent/) | APK |
-| Windows Android 工具 | [`tools/windows-android/`](./tools/windows-android/) | PowerShell 工具链 |
-| Windows SSH 隧道工具 | [`tools/windows-bridge/`](./tools/windows-bridge/) | 本机管理命令 |
-| Agent ↔ Bridge 协议 | [`packages/protocol/`](./packages/protocol/) | Schema 与兼容清单 |
-| 服务器部署工具 | [`scripts/`](./scripts/) | Shell 安装与诊断命令 |
-
-这些模块在同一个仓库中协作，但仍然分别构建和发布。Android、Windows 工具不会被打进
-服务器 Docker 镜像，Bridge 也不会被打进 APK。
-
-Skill 暂不属于本次 Monorepo 迁移，后续会单独设计其职责和调用边界。
-
-## 文档
-
-| 文档 | 内容 |
-| --- | --- |
-| [项目介绍](./docs/project-overview.md) | 架构、数据流、安全设计和限制 |
-| [部署与操作说明](./docs/user-guide.md) | 服务器部署、Dashboard、模型、飞书和日常管理 |
-| [Android 接入工具](./docs/android/index.md) | 设备要求、构建、安装、验证和配对 |
-| [报错与日志积累](./docs/troubleshooting.md) | 常见异常、排查顺序和脱敏日志 |
-| [共享协议](./packages/protocol/README.md) | Android Agent 与 Bridge 的协议契约 |
-| [安全策略](./SECURITY.md) | 隐私边界和漏洞报告 |
-
-## 服务器快速开始
-
-服务器需要 Linux x86_64、Docker Engine、Docker Compose v2、`curl` 和 `tar`。推荐至少
-2 GB 内存和 10 GB 可用磁盘。
+只需在终端中执行全自动化新手交互式引导脚本：
 
 ```bash
-git clone https://ghfast.top/https://github.com/Wdclouds/FEAGLEwxbot.git
-cd FEAGLEwxbot
-chmod +x feagle wxbot-bridge scripts/*.sh
-./feagle bridge setup
+bash install.sh
 ```
 
-中国大陆默认可保留 `ghfast.top` 前缀；海外网络或加速入口不可用时删除该前缀即可。
-Alpine、npm 和 PyPI 默认使用国内镜像。AstrBot 下载无论来自加速地址还是官方地址，均须
-通过固定 SHA-256 校验。
+### 引导器全自动特性：
+1. **1 秒极速网络测速**：智能识别当前网络是否在国内，自动切换 `ghfast.top` 加速镜像与阿里云 npm/pip 镜像。
+2. **终端交互选脑**：
+   - 选项 1: **Hermes 深度自主思考智能体**（深度工具链与长期记忆）
+   - 选项 2: **AstrBot 插件生态平台**（轻量省内存，海量娱乐插件开箱即用）
+3. **模型凭证一键配置**：支持标准 OpenAI 兼容协议、DeepSeek 与 Gemini 3.8 Flash。
+4. **一键拉起容器栈**：自动加载对应 Docker Compose Profile，完成健康检查并输出 Web 控制台访问入口。
 
-常用服务器命令：
+---
 
-```bash
-./feagle bridge doctor
-./feagle bridge start
-./feagle bridge status
-./feagle bridge logs
-./feagle bridge stop
-```
+## 📱 移动端与平板免密配对 (体验革命)
 
-原有 `./wxbot-bridge` 命令仍保留兼容。
+传统在平板端手敲长达几十位的公网 WebSocket URL 和 Token 极度易错，FEAGLE WxBot 现已实现**动态二维码免密扫码连接**：
 
-## Android 快速开始
+1. 打开浏览器登录 Bridge 管理台：`http://<服务器IP>:6190`
+2. 点击右上角 **【📱 连接设备】** 按钮，系统即时生成包含时间戳与加密签名的安全配对二维码。
+3. 平板端打开 **FEAGLE Agent**，点击首页的 **【扫码连接服务器】**。
+4. 对准屏幕一扫，10 秒内自动完成 WebSocket 认证与握手，控制台即刻变绿！
+5. **OTA 自更新机制**：平板建立连接后会自动校验版本，Bridge 内置静态分发服务，支持通过 Root 权限在应用内一键静默升级，彻底告别插数据线敲 ADB。
 
-Android 路线同时涉及服务器、Windows 与已 Root 平板。第一次部署请按照
-[Android Hook 从零部署操作手册](./docs/android/quickstart.md)顺序执行，不要只在平板上
-安装 Agent。Windows 阶段的主要命令是：
+---
+
+## 💻 本地开发与 Windows 工具链
+
+在 Windows 开发机上直接使用随仓库提供的便携式管理工具：
 
 ```powershell
-.\feagle.cmd android bootstrap-tools -AcceptAndroidSdkLicense
+# 三星 Galaxy Tab A8 物理设备环境诊断（Root/su、微信 8.0.70 门禁检查）
 .\feagle.cmd android doctor
-.\feagle.cmd android verify-wechat
+
+# 本地一键编译并安装 Android Agent APK
 .\feagle.cmd android build-agent
-.\feagle.cmd android install-agent -ConfirmAgentInstall
+
+# 查看 Android Agent 连接与前台服务状态
 .\feagle.cmd android agent-status
-```
 
-完成模块启用后，还需要通过 `pair-agent` 把平板与服务器一次性配对。工具不会替用户
-Root、不会静默卸载微信，也不会安装未经指纹验证的 APK。
-
-Windows 上的 Dashboard SSH 隧道仍可通过以下命令管理：
-
-```powershell
+# 启动本地 Bridge 服务进行调试
 .\feagle.cmd bridge start
-.\feagle.cmd bridge status
-.\feagle.cmd bridge exit
 ```
 
-## 版本与协议
+---
 
-产品版本记录在 [`VERSION`](./VERSION)，组件兼容关系记录在
-[`packages/protocol/compatibility.json`](./packages/protocol/compatibility.json)。当前基线为：
+## 📂 项目工程目录规范
 
 ```text
-FEAGLEwxbot       0.6.0
-Bridge            0.5.0
-Android Agent     0.6.0
-Android Protocol  feagle.android.v1
-WeChat baseline   8.0.70
+FEAGLEwxbot/
+├── .env.example                               # 唯一的全局配置模板（新手配置中心）
+├── docker-compose.yml                         # 基于 Profile 的自适应多容器编排引擎
+├── install.sh                                 # Linux 端自动化安装引导器
+├── feagle.cmd / feagle.ps1                    # Windows 本地管理辅助入口
+├── apps/
+│   ├── bridge/                                # WeChat Bridge 核心协议网关（Node.js 20）
+│   ├── android-agent/                         # Android Hook Agent 源码（Gradle 工程）
+│   └── plugins/                               # 统一外部轻量插件插槽（README 附宿主安全规范）
+├── deploy/
+│   ├── hermes/                                # Hermes 智能体运行模板 (config.yaml.template)
+│   └── mnemosyne/                             # 记忆系统配置 (docker-compose.pgvector.yml)
+├── data/                                      # 运行时持久化数据目录（.gitignore 严格排除）
+│   ├── wechat/                                # 微信映射数据库 (mapping.sqlite)
+│   ├── control-state.json                     # 控制状态与红绿灯群策略
+│   └── astrbot/                               # AstrBot 独立插件与数据
+└── scripts/
+    ├── auto-mirror.sh                         # 网络测速与国内高速镜像自适应引擎
+    └── backup-pack.sh                         # 开发者一键打包脱敏归档脚本
 ```
 
-执行以下命令可以检查服务端、Agent 和 Schema 是否仍使用同一协议：
+---
 
-```bash
-./feagle protocol check
-```
+## 🛡️ 微信防封与流控护栏
 
-## 默认管理地址
+Bridge 内置严密风控体系，确保无人值守长周期稳定运行：
+- **红绿灯接收模式**：支持每个群独立配置 `艾特回复 (MENTION_ONLY)`、`仅接收 (OBSERVE)`、`不接收 (OFF)`。
+- **频控与抖动**：每群独立回复冷却（5秒）、回复内容自动随机添加 1~3 秒人工停顿抖动。
+- **自动熔断器**：群内连续异常或高频刷屏触发熔断冷却（默认15分钟），并自动倒计时恢复。
+- **夜间休眠计划**：默认 `00:00-07:00` 静音休眠，面板支持一键【解除时限 / 恢复时限】。
 
-- Dashboard：`http://127.0.0.1:6190`
-- AstrBot WebUI：`http://127.0.0.1:6185`
+---
 
-二者默认只绑定服务器回环地址，应通过 SSH 隧道访问，不需要开放云安全组端口。
+## 📄 开源许可证
 
-## 隐私提醒
-
-请勿提交以下内容：
-
-- `.env`、模型 Key、飞书 Secret、设备 Token 和配对码
-- 微信 Cookie、Session、二维码、联系人和消息正文
-- `data/`、AstrBot 数据库、APK、设备诊断和未经脱敏的日志
-- 服务器地址、SSH 密码和私钥
-
-提交前运行：
-
-```bash
-./scripts/check-secrets.sh
-```
-
-## 许可证
-
-FEAGLEwxbot 自有源代码采用 [MIT License](./LICENSE) 开源。
-
-仓库引用的软件、npm 依赖、Android SDK、AstrBot、Wechat4u、微信客户端及其他第三方
-组件仍分别适用其原有许可证或服务条款；MIT License 不会替代这些第三方条款。
+本项目基于 [MIT License](LICENSE) 授权开源。

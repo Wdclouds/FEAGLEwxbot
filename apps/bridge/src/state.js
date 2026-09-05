@@ -222,6 +222,7 @@ export class RuntimeState extends EventEmitter {
     return {
       startedAt: this.startedAt,
       now: new Date().toISOString(),
+      botBackend: process.env.BOT_BACKEND || 'hermes',
       wechat: this.wechat,
       transport: this.transport,
       selfAvatar: this.selfAvatar,

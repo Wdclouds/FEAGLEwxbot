@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,6 +21,8 @@ test('control state defaults to running when no file exists', () => {
     groupChatMode: GROUP_CHAT_MODES.OFF,
     groupAllowlist: [],
     groupBlockedTerms: [],
+    groupModes: {},
+    selfAvatar: null,
     changedAt: '',
   });
 });
@@ -35,7 +37,7 @@ test('control state persists a manual-offline mode across restarts', () => {
 
   assert.equal(store.load().wechatAdminMode, WECHAT_ADMIN_MODES.MANUAL_OFFLINE);
   assert.equal(store.load().changedAt, '2026-07-28T12:00:00.000Z');
-  assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, 3);
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, 6);
 });
 
 test('control state persists fail-closed group chat configuration', () => {

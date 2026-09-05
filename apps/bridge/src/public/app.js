@@ -1040,6 +1040,26 @@ function render(state) {
   $('timezone').textContent = state.schedule.timezone;
   $('quiet-hours').textContent = state.schedule.quietHours;
 
+  // 自适应后端面板切换 (Hermes vs AstrBot)
+  const isAstrBot = state.botBackend === 'astrbot';
+  const navPlugins = $('nav-plugins');
+  if (navPlugins) {
+    navPlugins.hidden = !isAstrBot;
+  }
+  const memTab = document.querySelector('.conv-tab[data-tab="memory"]');
+  const personaTab = document.querySelector('.conv-tab[data-tab="persona"]');
+  const toolsTab = document.querySelector('.conv-tab[data-tab="tools"]');
+  if (memTab) memTab.hidden = isAstrBot;
+  if (personaTab) personaTab.hidden = isAstrBot;
+  if (toolsTab) toolsTab.hidden = isAstrBot;
+  if (isAstrBot) {
+    const iframe = $('astrbot-iframe');
+    if (iframe && iframe.src === 'about:blank') {
+      const astrHost = window.location.hostname;
+      iframe.src = `http://${astrHost}:6185`;
+    }
+  }
+
   $('uptime').textContent = `运行时间 / UPTIME ${duration(state.startedAt)}`;
 }
 
@@ -1558,3 +1578,56 @@ function initGlassSurface() {
   ro.observe(el);
 }
 initGlassSurface();
+
+// ── 平板扫码免密配对弹窗逻辑 ──
+const pairModal = $('pair-modal');
+const openPairBtn = $('open-pair-modal');
+const closePairBtn = $('close-pair-modal');
+const refreshPairBtn = $('refresh-pair-code');
+const pairQrImg = $('pair-qr-img');
+const pairQrLoading = $('pair-qr-loading');
+const pairEndpoint = $('pair-endpoint');
+const pairDeviceState = $('pair-device-state');
+
+async function loadPairCode() {
+  if (!pairQrImg) return;
+  pairQrLoading.style.display = 'block';
+  pairQrImg.style.display = 'none';
+  try {
+    const res = await fetch('/api/device/pair-code');
+    const data = await res.json();
+    if (data.qrDataUrl) {
+      pairQrImg.src = data.qrDataUrl;
+      pairQrImg.style.display = 'block';
+      pairQrLoading.style.display = 'none';
+    }
+    if (pairEndpoint) pairEndpoint.textContent = data.endpoint || '--';
+    if (pairDeviceState) {
+      const isConn = data.deviceStatus === 'CONNECTED';
+      pairDeviceState.textContent = isConn ? '已连接 / CONNECTED' : '等待扫码连接...';
+      pairDeviceState.style.color = isConn ? '#22c55e' : '#f59e0b';
+    }
+  } catch (e) {
+    pairQrLoading.textContent = '获取配对二维码失败，请重试';
+  }
+}
+
+if (openPairBtn) {
+  openPairBtn.addEventListener('click', () => {
+    if (pairModal) pairModal.hidden = false;
+    loadPairCode();
+  });
+}
+if (closePairBtn) {
+  closePairBtn.addEventListener('click', () => {
+    if (pairModal) pairModal.hidden = true;
+  });
+}
+if (refreshPairBtn) {
+  refreshPairBtn.addEventListener('click', loadPairCode);
+}
+if (pairModal) {
+  pairModal.addEventListener('click', (e) => {
+    if (e.target === pairModal) pairModal.hidden = true;
+  });
+}

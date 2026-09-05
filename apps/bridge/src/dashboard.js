@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { subscribeLogs, tailLogs } from './terminal-log.js';
 import { MnemosyneClient } from './mnemosyne-client.js';
 import * as convSkills from './conv-skills.js';
+import QRCode from 'qrcode';
 
 const DEFAULT_PUBLIC_ROOT = fileURLToPath(new URL('./public/', import.meta.url));
 
@@ -596,6 +597,55 @@ export class DashboardServer {
             }));
           });
       });
+      return;
+    }
+
+    // ---- GET /api/device/pair-code (扫码免密配对二维码生成) ----
+    if (url.pathname === '/api/device/pair-code') {
+      const host = request.headers['x-forwarded-host'] || request.headers.host || `${this.host}:${this.port}`;
+      const hostname = String(host).split(':')[0];
+      const wsPort = process.env.ANDROID_WS_HOST_PORT || process.env.ANDROID_WS_PORT || '6191';
+      const wsPath = process.env.ANDROID_WS_PATH || '/android';
+      const proto = request.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
+      const endpoint = `${proto}://${hostname}:${wsPort}${wsPath}`;
+      const token = process.env.ANDROID_BRIDGE_TOKEN || '';
+      const payload = {
+        endpoint,
+        token,
+        timestamp: Math.floor(Date.now() / 1000),
+      };
+      const rawPayload = JSON.stringify(payload);
+      QRCode.toDataURL(rawPayload, { errorCorrectionLevel: 'M', margin: 2, width: 280 }, (err, qrDataUrl) => {
+        response.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        response.end(JSON.stringify({
+          endpoint,
+          timestamp: payload.timestamp,
+          qrDataUrl: err ? '' : qrDataUrl,
+          deviceStatus: this.state.snapshot().android?.deviceStatus || 'DISCONNECTED',
+        }));
+      });
+      return;
+    }
+
+    // ---- GET /api/device/check-update (OTA 版本检查) ----
+    if (url.pathname === '/api/device/check-update') {
+      const clientVer = String(url.searchParams.get('version') || '0.0.0').trim();
+      const latestVer = '0.7.0';
+      const hasUpdate = clientVer !== latestVer;
+      response.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      response.end(JSON.stringify({
+        hasUpdate,
+        currentVersion: clientVer,
+        latestVersion: latestVer,
+        downloadUrl: '/api/device/download-agent',
+        releaseNotes: 'FEAGLE WxBot Agent 0.7.0: 支持扫码免密配对与OTA静默自更新机制',
+      }));
       return;
     }
 

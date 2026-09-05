@@ -1,36 +1,87 @@
 services:
-  bot:
+  # ============================================================================
+  # 1. FEAGLE WeChat Bridge (中枢核心服务：默认启动)
+  # ============================================================================
+  bridge:
     build:
       context: ./apps/bridge
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
         ALPINE_MIRROR: ${ALPINE_MIRROR:-https://mirrors.aliyun.com/alpine}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        PYPI_INDEX_URL: ${PYPI_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
-    container_name: Feagle-wxbot
+    container_name: feagle-bridge
     restart: unless-stopped
     env_file:
       - ./.env
     environment:
-      TZ: Asia/Shanghai
-      ASTRBOT_ROOT: /app
-      PYTHONPATH: /app/AstrBot
+      TZ: ${TZ:-Asia/Shanghai}
+      BOT_BACKEND: ${BOT_BACKEND:-hermes}
+      NODE_ENV: production
     volumes:
       - ./data:/app/data
+      - ./apps/plugins:/app/plugins:ro
     ports:
-      - "127.0.0.1:${ASTRBOT_WEBUI_HOST_PORT:-6185}:6185"
-      - "127.0.0.1:${DASHBOARD_HOST_PORT:-6190}:6190"
-      - "${ANDROID_WS_BIND_HOST:-127.0.0.1}:${ANDROID_WS_HOST_PORT:-6191}:${ANDROID_WS_PORT:-6191}"
+      # Dashboard Web 控制台端口
+      - "${DASHBOARD_HOST_PORT:-6190}:6190"
+      # Android Hook WebSocket 接入端口
+      - "${ANDROID_WS_BIND_HOST:-0.0.0.0}:${ANDROID_WS_HOST_PORT:-6191}:${ANDROID_WS_PORT:-6191}"
     networks:
-      - bot_net
+      - feagle_net
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:6190/api/health/live >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 20s
     stop_grace_period: 30s
 
+  # ============================================================================
+  # 2. AstrBot 插件生态容器 (Profile: astrbot)
+  # 仅当启用 profile astrbot 时拉起，官方镜像热拔插，轻量占用 ~150MB
+  # ============================================================================
+  astrbot:
+    image: soulter/astrbot:latest
+    container_name: feagle-astrbot
+    restart: unless-stopped
+    profiles:
+      - astrbot
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/astrbot:/AstrBot/data
+    ports:
+      - "127.0.0.1:${ASTRBOT_WEBUI_HOST_PORT:-6185}:6185"
+    networks:
+      - feagle_net
+    stop_grace_period: 15s
+
+  # ============================================================================
+  # 3. Mnemosyne 向量记忆数据库 (Profile: hermes)
+  # 仅当启用 profile hermes 时拉起，为 Hermes 提供独立 pgvector 记忆检索
+  # ============================================================================
+  mnemosyne-db:
+    image: pgvector/pgvector:pg16
+    container_name: feagle-mnemosyne-db
+    restart: unless-stopped
+    profiles:
+      - hermes
+    environment:
+      POSTGRES_USER: ${MNEMOSYNE_DB_USER:-hermes}
+      POSTGRES_PASSWORD: ${MNEMOSYNE_DB_PASSWORD:-hermes_secure_password_2026}
+      POSTGRES_DB: ${MNEMOSYNE_DB_NAME:-mnemosyne}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/mnemosyne-db:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - feagle_net
+    deploy:
+      resources:
+        limits:
+          memory: 250M
+
 networks:
-  bot_net:
+  feagle_net:
+    name: feagle_network
     driver: bridge
