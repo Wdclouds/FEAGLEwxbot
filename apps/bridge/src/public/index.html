@@ -10,7 +10,7 @@
       localStorage.getItem('feagle-theme') ||
       (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   </script>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=contactclick20260813">
 </head>
 <body>
   <!-- PixelBlast 背景（three.js shader 像素粒子，2026-08-05 替换原 ambient-grid 网格背景） -->
@@ -20,9 +20,8 @@
       <div class="clock-card">
         <strong class="clock" id="clock">--:--:--</strong>
       </div>
-      <img id="brand-logo" class="brand-logo" alt="FEAGLE" src="/assets/icons/feaglew.svg">
+      <img id="brand-logo" class="brand-logo" alt="FEAGLE" src="/assets/icons/feaglew.svg" role="button" aria-label="FEAGLE Logo" aria-disabled="true">
       <div class="header-tools">
-        <div class="bot-avatar" id="bot-avatar" title=""></div>
         <button class="icon-button theme-toggle" id="theme-toggle" type="button" aria-label="切换主题">
           <span id="theme-label">夜间 / Dark</span>
         </button>
@@ -31,33 +30,33 @@
 
     <!-- ══════════ 视图 1 · 总览 OVERVIEW（Cardless 2026-08-08）══════════ -->
     <section class="view overview-cardless active" data-view="overview">
-
-      <!-- 消息通道（去框化保留） -->
-      <div class="transport-strip" aria-label="消息通道管理">
-        <strong class="tb-title">消息通道</strong>
-        <form id="transport-settings-form" class="segmented" role="radiogroup">
-          <label class="seg"><input type="radio" name="transport" value="wechat4u" data-setting="transport"><span>Wechat4u</span></label>
-          <label class="seg"><input type="radio" name="transport" value="android" data-setting="transport"><span>Android</span></label>
-        </form>
-        <span id="transport-current" class="tb-current"></span>
-        <button class="button" id="switch-transport" type="button">切换</button>
-        <button class="button secondary" id="save-transport" type="button">保存</button>
-        <span id="transport-hint" class="tb-hint"></span>
-        <span id="save-status-transport" class="tb-hint"></span>
-      </div>
-
-      <!-- 无框流体三区：左服务 / 中央核心 / 右数据 -->
+      <!-- 安卓 Hook 固定总览：中央核心 / 下方四项服务 -->
       <div class="oc-grid">
+        <!-- 中央核心（无背景悬浮） -->
+        <div class="oc-hero">
+          <div class="hero-orb" id="hero-orb">
+            <div id="qr-placeholder" class="qr-placeholder"><span class="pulse"></span></div>
+            <div class="hero-avatar" id="hero-avatar"></div>
+          </div>
+          <div class="hero-name">
+            <i class="hero-dot" id="hero-dot"></i>
+            <b id="account">--</b>
+          </div>
+          <div class="hero-sub">
+            <span id="admin-mode-badge">运行中</span>
+            <span id="wechat-detail"></span>
+          </div>
+        </div>
 
-        <!-- 左 · 服务列表（纯文字） -->
-        <aside class="oc-svc">
-          <div class="svc-item" data-key="astrbot">
+        <!-- 四项服务检测 -->
+        <aside class="oc-svc" aria-label="服务状态">
+          <div class="svc-item" data-key="hermes">
             <i class="svc-dot"></i>
             <div class="svc-txt">
-              <b>AstrBot</b>
-              <small id="astrbot-detail">机器人框架</small>
+              <b>Hermes</b>
+              <small id="hermes-detail">Agent Gateway</small>
             </div>
-            <span id="astrbot-status" class="svc-state">启动中</span>
+            <span id="hermes-status" class="svc-state">连接中</span>
           </div>
           <div class="svc-item" data-key="onebot">
             <i class="svc-dot"></i>
@@ -85,86 +84,90 @@
           </div>
           <p class="oc-hint" id="admin-mode-hint">正常接收并回复消息</p>
         </aside>
-
-        <!-- 中 · 中央核心（无背景悬浮） -->
-        <div class="oc-hero">
-          <div class="hero-orb" id="hero-orb">
-            <img id="qr" alt="微信登录二维码">
-            <div id="qr-placeholder" class="qr-placeholder"><span class="pulse"></span></div>
-            <div class="hero-avatar" id="hero-avatar"></div>
-          </div>
-          <div class="hero-name">
-            <i class="hero-dot" id="hero-dot"></i>
-            <b id="account">--</b>
-          </div>
-          <div class="hero-sub">
-            <span id="admin-mode-badge">运行中</span>
-            <span id="wechat-detail"></span>
-          </div>
-          <p class="hint" id="qr-time"></p>
-        </div>
-
-        <!-- 右 · 海报级数据（JS 渲染） -->
-        <aside class="oc-data" id="metrics" aria-label="消息统计"></aside>
-
       </div>
     </section>
 
-    <!-- ══════════ 视图 2 · 消息流 TRAFFIC ══════════ -->
+    <!-- ══════════ 视图 2 · 日志 LOGS ══════════ -->
     <section class="view" data-view="traffic">
       <section class="lower-grid">
-        <article class="panel feed-panel">
-          <div class="panel-title">
-            <div><strong>消息概览</strong></div>
-            <em>VOLATILE · LAST 50</em>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>TIME</th>
-                  <th>DIR</th>
-                  <th>PEER</th>
-                  <th>TEXT</th>
-                  <th>STATUS</th>
-                </tr>
-              </thead>
-              <tbody id="messages"></tbody>
-            </table>
-          </div>
-        </article>
         <article class="panel feed-panel">
           <div class="panel-title">
             <div><strong>终端日志</strong></div>
             <button id="copy-term-log" class="copy-term-btn" type="button" title="复制最近 15 条日志">复制</button>
           </div>
-          <div class="terminal-log" id="term-log">
+          <div class="terminal-log" id="term-log" role="log" aria-live="polite" aria-relevant="additions">
             <p><time>--:--:--</time><span class="lvl lvl-info">INFO</span>等待日志流 / Connecting to log stream…</p>
           </div>
         </article>
       </section>
     </section>
 
-    <!-- ══════════ 视图 3 · 群聊安全 GROUPS ══════════ -->
+    <!-- ══════════ 视图 3 · 消息联系人 MESSAGES ══════════ -->
     <section class="view" data-view="groups">
       <section class="panel group-panel">
         <div class="group-layout">
-          <div class="group-chat-col">
-            <div id="group-list" class="group-list">
-              <p class="empty-inline">尚未发现群聊 / No groups discovered</p>
-            </div>
-            <div class="group-stats">
-              <span>观察 <b id="group-observed">0</b><small>OBSERVED</small></span>
-              <span>转发 <b id="group-forwarded">0</b><small>FORWARDED</small></span>
-              <span>回复 <b id="group-replied">0</b><small>REPLIED</small></span>
-              <span>拦截 <b id="group-blocked">0</b><small>BLOCKED</small></span>
-              <span>策略 <b id="group-policy-blocked">0</b><small>POLICY</small></span>
-              <span>限流 <b id="group-rate-limited">0</b><small>RATE LIMIT</small></span>
-              <span>熔断 <b id="group-fused">0</b><small>FUSED</small></span>
-            </div>
+          <div id="group-list" class="group-list" role="list" aria-label="消息联系人列表">
+            <p class="empty-inline">点击顶部 Logo 同步群聊与私聊</p>
           </div>
-          <div class="group-feature-placeholder">
-            <strong>群聊功能：待开发</strong>
+          <section class="group-feature-placeholder" aria-live="polite">
+            <header class="group-feature-head">
+              <strong id="selected-group-name">请选择联系人</strong>
+              <span id="conv-kind-badge" class="conv-kind-badge" hidden></span>
+              <div class="group-mode-actions" id="group-mode-actions" hidden>
+                <span class="group-mode-label">接收模式:</span>
+                <button class="mode-btn" data-mode="MENTION_ONLY" type="button">艾特回复</button>
+                <button class="mode-btn" data-mode="OBSERVE" type="button">仅接收</button>
+                <button class="mode-btn" data-mode="OFF" type="button">不接收</button>
+              </div>
+            </header>
+            <nav class="conv-tabs" id="conv-tabs" hidden aria-label="会话功能">
+              <button class="conv-tab active" type="button" data-tab="flow">对话流</button>
+              <button class="conv-tab" type="button" data-tab="memory">记忆</button>
+              <button class="conv-tab" type="button" data-tab="persona">画像</button>
+              <button class="conv-tab" type="button" data-tab="tools">工具栏</button>
+              <button class="conv-tab" type="button" data-tab="logs">日志</button>
+            </nav>
+            <div class="conv-body">
+              <div class="conv-pane active" data-pane="flow">
+                <div id="flow-list" class="flow-list"><p class="empty-inline">选择左侧联系人查看对话流</p></div>
+                <button id="flow-load-more" class="flow-more" type="button" hidden>加载更早的消息</button>
+              </div>
+              <div class="conv-pane" data-pane="memory">
+                <div class="memory-toolbar">
+                  <div class="memory-scope" id="memory-scope">
+                    <button class="memory-scope-btn active" type="button" data-scope="chat">本聊天</button>
+                    <button class="memory-scope-btn" type="button" data-scope="global">全局</button>
+                  </div>
+                  <select id="memory-owner" class="memory-input memory-owner" title="按成员筛选" disabled>
+                    <option value="">全部成员</option>
+                  </select>
+                  <input id="memory-q" class="memory-input" type="search" placeholder="搜索记忆…（回车搜索）" autocomplete="off">
+                  <button id="memory-search-btn" class="memory-btn" type="button">搜索</button>
+                  <button id="memory-refresh-btn" class="memory-btn" type="button">刷新</button>
+                </div>
+                <div id="memory-stats" class="memory-stats"></div>
+                <div id="memory-list" class="memory-list"><p class="empty-inline">加载中…</p></div>
+              </div>
+              <div class="conv-pane" data-pane="persona">
+                <div id="persona-list" class="persona-list"><p class="empty-inline">选择联系人后蒸馏画像</p></div>
+              </div>
+              <div class="conv-pane" data-pane="tools">
+                <div id="tools-config" class="tools-config"><p class="empty-inline">选择联系人后配置工具栏</p></div>
+              </div>
+              <div class="conv-pane" data-pane="logs">
+                <div id="conv-log-list" class="conv-log-list"><p class="empty-inline">选择联系人后查看输入/输出日志</p></div>
+                <button id="conv-log-more" class="flow-more" type="button" hidden>更早的日志</button>
+              </div>
+            </div>
+          </section>
+          <div class="group-stats" aria-label="群聊统计">
+            <span>观察 <b id="group-observed">0</b><small>OBSERVED</small></span>
+            <span>转发 <b id="group-forwarded">0</b><small>FORWARDED</small></span>
+            <span>回复 <b id="group-replied">0</b><small>REPLIED</small></span>
+            <span>拦截 <b id="group-blocked">0</b><small>BLOCKED</small></span>
+            <span>策略 <b id="group-policy-blocked">0</b><small>POLICY</small></span>
+            <span>限流 <b id="group-rate-limited">0</b><small>RATE LIMIT</small></span>
+            <span>熔断 <b id="group-fused">0</b><small>FUSED</small></span>
           </div>
         </div>
       </section>
@@ -193,7 +196,7 @@
             <div class="field"><label>用户窗口（秒）</label><input type="number" data-setting="userRateWindowMs" data-scale="1000" min="1" max="3600"></div>
             <div class="field"><label>全局窗口上限</label><input type="number" data-setting="globalRateLimit" min="1" max="1000"></div>
             <div class="field"><label>全局窗口（秒）</label><input type="number" data-setting="globalRateWindowMs" data-scale="1000" min="1" max="3600"></div>
-            <div class="field"><label>AstrBot 并发总数</label><input type="number" data-setting="maxInFlight" min="1" max="100"></div>
+            <div class="field"><label>Hermes 并发总数</label><input type="number" data-setting="maxInFlight" min="1" max="100"></div>
             <div class="field"><label>单用户并发</label><input type="number" data-setting="maxInFlightPerUser" min="1" max="20"></div>
           </div>
         </section>
@@ -245,34 +248,13 @@
     </svg>
     <div class="glass-surface__content">
       <a class="active" href="#/overview" data-view-link="overview"><span class="nav-cn">总览</span></a>
-      <a href="#/traffic" data-view-link="traffic"><span class="nav-cn">消息流</span></a>
-      <a href="#/groups" data-view-link="groups"><span class="nav-cn">群聊</span></a>
+      <a href="#/traffic" data-view-link="traffic"><span class="nav-cn">日志</span></a>
+      <a href="#/groups" data-view-link="groups"><span class="nav-cn">消息</span></a>
       <a href="#/settings-traffic" data-view-link="settings-traffic"><span class="nav-cn">流量安全</span></a>
     </div>
   </nav>
 
-  <!-- 群聊接收模式切换确认弹窗（2026-08-07） -->
-  <div class="modal-overlay" id="group-status-modal" hidden>
-    <div class="modal" role="dialog" aria-modal="true">
-      <div class="modal-title">切换接收模式</div>
-      <div class="modal-group" id="group-status-modal-group"></div>
-      <div class="modal-options" id="group-status-modal-options">
-        <button class="modal-option" type="button" data-mode="MENTION_ONLY">艾特回复<small>REPLY ON @</small></button>
-        <button class="modal-option" type="button" data-mode="OBSERVE">仅接收不回复<small>RECEIVE ONLY</small></button>
-        <button class="modal-option" type="button" data-mode="OFF">不接收<small>IGNORE</small></button>
-      </div>
-      <div class="modal-actions">
-        <button id="group-status-modal-cancel" class="modal-btn" type="button">取消</button>
-        <button id="group-status-modal-confirm" class="modal-btn primary" type="button">确认切换</button>
-      </div>
-      <div class="modal-tip" id="group-status-modal-tip" hidden>
-        <span>时限内不可开启艾特回复（只接收不回复），请先解除时限</span>
-        <button id="group-status-modal-goto" class="modal-btn" type="button">去解除时限</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="/app.js?v=glass20260805"></script>
-  <script src="/pixel-blast.js?v=pb20260805"></script>
+  <script src="/app.js?v=contactclick20260813"></script>
+  <script src="/pixel-blast.js?v=themeroute20260813"></script>
 </body>
 </html>

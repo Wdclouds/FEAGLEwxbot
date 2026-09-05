@@ -45,6 +45,20 @@ export class RuntimeState extends EventEmitter {
       avatarSize: 0,
       updatedAt: '',
     };
+    this.contacts = {
+      status: 'IDLE',
+      lastRefreshedAt: '',
+      groups: [],
+      privates: [],
+      counts: {
+        groups: 0,
+        privates: 0,
+        inserted: 0,
+        updated: 0,
+        deleted: 0,
+      },
+      error: '',
+    };
     this.android = {
       serverStatus: 'DISABLED',
       endpoint: '',
@@ -211,6 +225,7 @@ export class RuntimeState extends EventEmitter {
       wechat: this.wechat,
       transport: this.transport,
       selfAvatar: this.selfAvatar,
+      contacts: this.contacts,
       android: this.android,
       astrbot: this.astrbot,
       onebot: this.onebot,
@@ -234,6 +249,16 @@ export class RuntimeState extends EventEmitter {
       avatarBase64,
       avatarSize: Number(data?.avatarSize || 0),
       updatedAt: new Date().toISOString(),
+    };
+    this.broadcast();
+  }
+
+  /** 更新联系人同步状态（Agent contacts_snapshot 驱动）。counts 整体替换。 */
+  setContacts(values) {
+    this.contacts = {
+      ...this.contacts,
+      ...values,
+      counts: { ...this.contacts.counts, ...(values?.counts || {}) },
     };
     this.broadcast();
   }

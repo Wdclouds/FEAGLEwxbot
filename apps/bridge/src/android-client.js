@@ -88,6 +88,32 @@ function normalizeTimestamp(value) {
   return timestamp < 10_000_000_000 ? timestamp * 1_000 : timestamp;
 }
 
+/** contacts_snapshot 结构预校验（字段级校验与事务由 idMap.syncContacts 负责）。 */
+function validateContactsSnapshot(message) {
+  const generatedAt = typeof message.generatedAt === 'string'
+    ? message.generatedAt.trim()
+    : '';
+  if (!generatedAt || Number.isNaN(Date.parse(generatedAt))) {
+    throw new Error('contacts_snapshot 缺少有效的 generatedAt');
+  }
+  if (!Array.isArray(message.groups)) {
+    throw new Error('contacts_snapshot 缺少 groups 数组');
+  }
+  // 通讯录定义：privateContacts（rcontact 个人联系人）；legacy privates 兼容
+  const privateEntries = Array.isArray(message.privateContacts)
+    ? message.privateContacts
+    : (Array.isArray(message.privates) ? message.privates : null);
+  if (privateEntries === null) {
+    throw new Error('contacts_snapshot 缺少 privateContacts 数组');
+  }
+  return {
+    generatedAt,
+    groups: message.groups,
+    privates: privateEntries,
+    full: message.full === true,
+  };
+}
+
 export class AndroidWechatClient {
   constructor({
     state,
@@ -127,6 +153,14 @@ export class AndroidWechatClient {
     commandTimeoutMs = positiveInteger(
       process.env.ANDROID_COMMAND_TIMEOUT_MS,
       30_000,
+    ),
+    contactsSyncIntervalMs = positiveInteger(
+      process.env.ANDROID_CONTACTS_SYNC_INTERVAL_MS,
+      30 * 60_000,
+    ),
+    contactsSyncTimeoutMs = positiveInteger(
+      process.env.ANDROID_CONTACTS_SYNC_TIMEOUT_MS,
+      25_000,
     ),
     pairingStore = null,
     pairingDbPath = process.env.ANDROID_PAIRING_DB_PATH
@@ -172,6 +206,8 @@ export class AndroidWechatClient {
     this.delay = delay;
     this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     this.commandTimeoutMs = commandTimeoutMs;
+    this.contactsSyncIntervalMs = contactsSyncIntervalMs;
+    this.contactsSyncTimeoutMs = contactsSyncTimeoutMs;
     this.pairingStore = pairingStore;
     this.ownsPairingStore = !pairingStore;
     this.pairingDbPath = pairingDbPath;
@@ -191,6 +227,11 @@ export class AndroidWechatClient {
     this.lastGroupReplyAt = new Map();
     this.groupSendQueues = new Map();
     this.watchdog = null;
+    // 联系人同步（静默）：等待器按 commandId 匹配，同一时刻只允许一个任务
+    this.contactSyncWaiters = new Map();
+    this.contactsSyncing = null;
+    this.contactsTimer = null;
+    this.contactsSyncedThisConnection = false;
     this.state.patch('groupChat', {
       mode: this.groupChatMode,
       allowlist: [...this.groupAllowlist],
@@ -273,6 +314,13 @@ export class AndroidWechatClient {
     this.state.patch('android', { serverStatus: 'LISTENING' });
     this.watchdog = setInterval(() => this.checkHeartbeat(), 15_000);
     this.watchdog.unref();
+    if (this.contactsSyncIntervalMs > 0) {
+      this.contactsTimer = setInterval(
+        () => this.contactsSyncTick(),
+        this.contactsSyncIntervalMs,
+      );
+      this.contactsTimer.unref();
+    }
     console.log(`[Android] Agent WebSocket listening on ${this.host}:${this.port}${this.path}`);
   }
 
@@ -345,6 +393,7 @@ export class AndroidWechatClient {
       case 'hook_status':
         socket.feagle.hookConnected = message.connected === true;
         this.markHealthy(socket);
+        this.scheduleInitialContactsSync();
         break;
       case 'private_text':
         await this.handlePrivateText(socket, message);
@@ -364,6 +413,9 @@ export class AndroidWechatClient {
         break;
       case 'command_result':
         this.handleCommandResult(message);
+        break;
+      case 'contacts_snapshot':
+        this.handleContactsSnapshot(socket, message);
         break;
       default:
         socket.close(1008, 'Unsupported message type');
@@ -414,6 +466,8 @@ export class AndroidWechatClient {
       accepted: true,
       heartbeatTimeoutMs: this.heartbeatTimeoutMs,
     });
+    // Android Agent 完成认证并建立连接后执行一次静默联系人同步
+    this.scheduleInitialContactsSync();
   }
 
   markHealthy(socket) {
@@ -1208,13 +1262,178 @@ export class AndroidWechatClient {
   }
 
   handleCommandResult(message) {
-    const pending = this.pendingCommands.get(String(message.commandId || ''));
+    const commandId = String(message.commandId || '');
+    // 联系人同步命令也可能以 command_result 失败（hook 未连/busy/invalid）
+    const contactWaiter = this.contactSyncWaiters.get(commandId);
+    if (contactWaiter) {
+      clearTimeout(contactWaiter.timer);
+      this.contactSyncWaiters.delete(commandId);
+      contactWaiter.reject(new Error(
+        message.ok === true
+          ? 'Agent 未返回 contacts_snapshot'
+          : String(message.error || 'contacts_sync_failed'),
+      ));
+      return;
+    }
+    const pending = this.pendingCommands.get(commandId);
     if (!pending) return;
     clearTimeout(pending.timer);
-    this.pendingCommands.delete(String(message.commandId));
+    this.pendingCommands.delete(commandId);
     this.state.patch('android', { pendingCommands: this.pendingCommands.size });
     if (message.ok === true) pending.resolve();
     else pending.reject(new Error(String(message.error || 'send_text_failed')));
+  }
+
+  /**
+   * 静默联系人同步（内部调用方法）：生成 commandId → 向已认证 Agent Socket
+   * 发送 refresh_contacts → 等待匹配 commandId 的 contacts_snapshot →
+   * 一次数据库事务同步 contacts 表 → 返回统计。
+   *
+   * - 不匹配/重复/过期响应一律忽略（handleContactsSnapshot 按 commandId 匹配）。
+   * - 超时后清理 pending Promise 并拒绝。
+   * - Agent 未连接立即返回明确错误。
+   * - 同一时刻只允许一个同步任务；重复调用复用同一个 in-flight Promise
+   *   （不重复向 Agent 发送 refresh_contacts）。
+   */
+  refreshContacts({ includeAvatars = true } = {}) {
+    if (this.contactsSyncing) return this.contactsSyncing;
+    if (!this.loggedIn || this.socket?.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('Android WeChat Agent is not connected'));
+    }
+    const task = this.performContactsRefresh(Boolean(includeAvatars));
+    this.contactsSyncing = task;
+    // 用双回调派生链清理（不产生新的未处理 rejection）
+    task.then(
+      () => this.clearContactsSync(task),
+      () => this.clearContactsSync(task),
+    );
+    return task;
+  }
+
+  clearContactsSync(task) {
+    if (this.contactsSyncing === task) this.contactsSyncing = null;
+  }
+
+  async performContactsRefresh(includeAvatars) {
+    const commandId = randomUUID();
+    const snapshotPromise = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.contactSyncWaiters.delete(commandId);
+        reject(new Error('contacts_snapshot timed out'));
+      }, this.contactsSyncTimeoutMs);
+      timer.unref();
+      this.contactSyncWaiters.set(commandId, { resolve, reject, timer });
+    });
+    this.state.setContacts({ status: 'REFRESHING', error: '' });
+    const sent = this.send(this.socket, {
+      type: 'refresh_contacts',
+      commandId,
+      includeAvatars,
+    });
+    if (!sent) {
+      const pending = this.contactSyncWaiters.get(commandId);
+      clearTimeout(pending?.timer);
+      this.contactSyncWaiters.delete(commandId);
+      this.state.setContacts({
+        status: 'ERROR',
+        error: 'Android Agent disconnected before refresh_contacts was sent',
+      });
+      throw new Error('Android Agent disconnected before refresh_contacts was sent');
+    }
+
+    let snapshot;
+    try {
+      snapshot = await snapshotPromise;
+    } catch (error) {
+      this.state.setContacts({
+        status: 'ERROR',
+        error: String(error.message || error).slice(0, 300),
+      });
+      throw error;
+    }
+
+    let stats;
+    try {
+      stats = await this.idMap.syncContacts(snapshot);
+    } catch (error) {
+      // 校验/事务失败：contacts 表保持原状，不清理旧数据
+      this.state.setContacts({
+        status: 'ERROR',
+        error: String(error.message || error).slice(0, 300),
+      });
+      throw error;
+    }
+
+    const counts = {
+      groups: snapshot.groups.length,
+      privates: snapshot.privates.length,
+      inserted: stats.inserted,
+      updated: stats.updated,
+      deleted: stats.deleted,
+    };
+    this.state.setContacts({
+      status: 'READY',
+      lastRefreshedAt: snapshot.generatedAt,
+      groups: snapshot.groups,
+      privates: snapshot.privates,
+      counts,
+      error: '',
+    });
+    return {
+      groups: counts.groups,
+      privates: counts.privates,
+      inserted: counts.inserted,
+      updated: counts.updated,
+      deleted: counts.deleted,
+      refreshedAt: snapshot.generatedAt,
+    };
+  }
+
+  /** contacts_snapshot 到达：只匹配 commandId 对应的等待器；不匹配/重复/过期
+   *  响应直接忽略。快照先过结构校验，再由 idMap.syncContacts 做完整校验+事务。 */
+  handleContactsSnapshot(socket, message) {
+    const commandId = String(message.commandId || '');
+    const waiter = this.contactSyncWaiters.get(commandId);
+    if (!waiter) return;
+    clearTimeout(waiter.timer);
+    this.contactSyncWaiters.delete(commandId);
+    try {
+      waiter.resolve(validateContactsSnapshot(message));
+    } catch (error) {
+      waiter.reject(error);
+    }
+  }
+
+  /** Agent 认证连接后执行一次（仅当 Hook 已连接且本连接未同步过）。 */
+  scheduleInitialContactsSync() {
+    if (
+      !this.loggedIn
+      || this.contactsSyncing
+      || this.contactsSyncedThisConnection
+    ) return;
+    this.contactsSyncedThisConnection = true;
+    void this.refreshContacts({ includeAvatars: true }).catch((error) => {
+      this.state.addError('contacts-auto-sync', error);
+    });
+  }
+
+  /** 保守周期定时同步：断线/同步中直接跳过；失败只记录错误，不重启任何组件。 */
+  contactsSyncTick() {
+    if (!this.loggedIn || this.socket?.readyState !== WebSocket.OPEN) return;
+    if (this.contactsSyncing) return;
+    void this.refreshContacts({ includeAvatars: true }).catch((error) => {
+      this.state.addError('contacts-auto-sync', error);
+    });
+  }
+
+  /** 断线/停止时拒绝所有待完成联系人同步请求并清理等待器。 */
+  rejectContactSyncs(reason) {
+    for (const waiter of this.contactSyncWaiters.values()) {
+      clearTimeout(waiter.timer);
+      waiter.reject(new Error(reason));
+    }
+    this.contactSyncWaiters.clear();
+    this.contactsSyncing = null;
   }
 
   handleClose(socket) {
@@ -1222,6 +1441,9 @@ export class AndroidWechatClient {
     this.socket = null;
     this.loggedIn = false;
     this.rejectPendingCommands('Android Agent disconnected');
+    // Agent 断线：取消待完成的联系人同步请求
+    this.rejectContactSyncs('Android Agent disconnected');
+    this.contactsSyncedThisConnection = false;
     if (this.stopping) return;
     this.state.patch('wechat', {
       status: this.adminMode === WECHAT_ADMIN_MODES.MANUAL_OFFLINE
@@ -1311,7 +1533,10 @@ export class AndroidWechatClient {
     this.stopping = true;
     if (this.watchdog) clearInterval(this.watchdog);
     this.watchdog = null;
+    if (this.contactsTimer) clearInterval(this.contactsTimer);
+    this.contactsTimer = null;
     this.rejectPendingCommands('Android transport stopped');
+    this.rejectContactSyncs('Android transport stopped');
     if (this.socket) this.socket.close(1001, 'Server shutdown');
     this.socket = null;
     this.loggedIn = false;
