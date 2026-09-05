@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract Tag Version
+        id: get_version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building release for version: ${VERSION}"
+
+      - name: Package Linux Suite
+        run: |
+          chmod +x scripts/package-release.sh
+          ./scripts/package-release.sh "${{ steps.get_version.outputs.VERSION }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "FEAGLE WxBot v${{ steps.get_version.outputs.VERSION }}"
+          draft: false
+          prerelease: false
+          files: |
+            dist/feagle-suite-linux-amd64-v${{ steps.get_version.outputs.VERSION }}.tar.gz
+          generate_release_notes: true

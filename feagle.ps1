@@ -30,6 +30,7 @@ Usage / 用法:
   .\feagle.cmd android doctor
   .\feagle.cmd android build-agent
   .\feagle.cmd android agent-status
+  .\feagle.cmd env
   .\feagle.cmd protocol check
 '@
 }
@@ -77,6 +78,12 @@ switch ($Component.ToLowerInvariant()) {
     # 子脚本是 .ps1，不会设置 $LASTEXITCODE（StrictMode 下访问未定义变量会报错）。
     # 用 $? 反映调用是否成功。
     if (-not $?) { exit 1 }
+    exit 0
+  }
+  'env' {
+    . (Join-Path $projectRoot 'tools\windows\auto-env.ps1')
+    $net = Get-NetworkProfile
+    $null = Resolve-NodeRuntime -NetworkProfile $net -ProjectRoot $projectRoot
     exit 0
   }
   'protocol' {
