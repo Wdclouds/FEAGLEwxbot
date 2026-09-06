@@ -1601,7 +1601,13 @@ async function loadPairCode() {
       pairQrImg.style.display = 'block';
       pairQrLoading.style.display = 'none';
     }
-    if (pairEndpoint) pairEndpoint.textContent = data.endpoint || '--';
+    if (pairEndpoint) {
+      let desc = data.endpoint || '--';
+      if (data.pairingCode) {
+        desc += `\n[临时配对码: ${data.pairingCode}]`;
+      }
+      pairEndpoint.textContent = desc;
+    }
     if (pairDeviceState) {
       const isConn = data.deviceStatus === 'CONNECTED';
       pairDeviceState.textContent = isConn ? '已连接 / CONNECTED' : '等待扫码连接...';

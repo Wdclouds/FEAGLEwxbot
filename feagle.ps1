@@ -31,6 +31,9 @@ Usage / 用法:
   .\feagle.cmd android build-agent
   .\feagle.cmd android agent-status
   .\feagle.cmd env
+  .\feagle.cmd desktop check
+  .\feagle.cmd desktop build
+  .\feagle.cmd desktop run
   .\feagle.cmd protocol check
 '@
 }
@@ -79,6 +82,14 @@ switch ($Component.ToLowerInvariant()) {
     # 用 $? 反映调用是否成功。
     if (-not $?) { exit 1 }
     exit 0
+  }
+  'desktop' {
+    $action = if ($RemainingArguments.Count -gt 0) { $RemainingArguments[0] } else { 'check' }
+    $isRelease = $RemainingArguments -contains '--release'
+    $splat = @{ Action = $action }
+    if ($isRelease) { $splat['Release'] = $true }
+    & (Join-Path $projectRoot 'tools\windows\build-desktop.ps1') @splat
+    exit $LASTEXITCODE
   }
   'env' {
     . (Join-Path $projectRoot 'tools\windows\auto-env.ps1')

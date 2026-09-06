@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { AndroidPairingStore } from './android-pairing-store.js';
+import { resolveDataPath } from './paths.js';
 
 function usage() {
   console.error(`Usage:
@@ -21,7 +22,7 @@ if (secret.length < 24) {
   process.exitCode = 2;
 } else {
   const store = new AndroidPairingStore({
-    path: process.env.ANDROID_PAIRING_DB_PATH || '/app/data/android/pairing.sqlite',
+    path: process.env.ANDROID_PAIRING_DB_PATH || resolveDataPath('android/pairing.sqlite'),
     secret,
   });
   try {

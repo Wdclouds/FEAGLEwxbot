@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
+import { resolveDataPath } from './paths.js';
 import QRCode from 'qrcode';
 import {
   ManagedWechat,
@@ -63,7 +64,7 @@ export class WechatClient {
     initialGroupAllowlist = [],
     initialGroupBlockedTerms = [],
     groupSafety = null,
-    sessionPath = '/app/data/wechat/session.json',
+    sessionPath = resolveDataPath('wechat/session.json'),
     now = () => Date.now(),
     watchdogIntervalMs = positiveInteger(process.env.WECHAT_WATCHDOG_INTERVAL_MS, 15_000),
     startupGraceMs = positiveInteger(process.env.WECHAT_STARTUP_GRACE_MS, 90_000),

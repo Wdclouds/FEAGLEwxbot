@@ -1,11 +1,12 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { resolveDataPath } from './paths.js';
 
 const ID_FLOOR = 1_000_000_000;
 
 export class IdMap {
-  constructor(path = '/app/data/wechat/mapping.sqlite') {
+  constructor(path = resolveDataPath('wechat/mapping.sqlite')) {
     mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(`

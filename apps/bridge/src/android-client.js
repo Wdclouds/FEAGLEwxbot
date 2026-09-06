@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import { resolveDataPath } from './paths.js';
 import { WebSocket, WebSocketServer } from 'ws';
 import { WECHAT_ADMIN_MODES } from './control-state.js';
 import { AndroidPairingStore } from './android-pairing-store.js';
@@ -164,7 +165,7 @@ export class AndroidWechatClient {
     ),
     pairingStore = null,
     pairingDbPath = process.env.ANDROID_PAIRING_DB_PATH
-      || '/app/data/android/pairing.sqlite',
+      || resolveDataPath('android/pairing.sqlite'),
     pairingAttemptLimit = positiveInteger(
       process.env.ANDROID_PAIRING_ATTEMPT_LIMIT,
       10,

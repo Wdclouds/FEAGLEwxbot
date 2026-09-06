@@ -16,6 +16,10 @@ import {
 import { GROUP_CHAT_MODES } from './group-chat.js';
 import { GroupSafetyGate } from './group-safety.js';
 import { BridgeSettingsStore } from './bridge-settings.js';
+import { resolveDataPath } from './paths.js';
+import { createMnemosyneShimServer } from './mnemosyne-shim.js';
+import { MnemosyneClient } from './mnemosyne-client.js';
+import os from 'node:os';
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -32,7 +36,7 @@ function userIdSet(value) {
 
 const state = new RuntimeState();
 const settingsStore = new BridgeSettingsStore({
-  path: process.env.BRIDGE_SETTINGS_PATH || '/app/data/bridge-settings.json',
+  path: process.env.BRIDGE_SETTINGS_PATH || resolveDataPath('bridge-settings.json'),
 });
 let settings;
 try {
@@ -42,7 +46,7 @@ try {
   settings = settingsStore.snapshot();
 }
 const controlStore = new PersistentControlState({
-  path: process.env.BOT_CONTROL_STATE_PATH || '/app/data/control-state.json',
+  path: process.env.BOT_CONTROL_STATE_PATH || resolveDataPath('control-state.json'),
 });
 let savedControl = {
   wechatAdminMode: WECHAT_ADMIN_MODES.RUNNING,
@@ -108,7 +112,7 @@ const setTestMode = (enabled) => {
   return state.snapshot();
 };
 
-const feishuBindingPath = process.env.FEISHU_BINDING_PATH || '/app/data/feishu/binding.json';
+const feishuBindingPath = process.env.FEISHU_BINDING_PATH || resolveDataPath('feishu/binding.json');
 let savedFeishuBinding = null;
 try {
   savedFeishuBinding = loadFeishuBinding(feishuBindingPath);
@@ -126,10 +130,30 @@ const feishuBinding = new FeishuBindingClient({
   bindingPath: feishuBindingPath,
 });
 let wechat;
+
+// 自动探测并启动 Windows / 单机本地记忆桩（监听 18010 端口，使用 node:sqlite）
+let mnemosyneShim = null;
+if (process.env.MNEMOSYNE_LOCAL !== 'false') {
+  try {
+    mnemosyneShim = createMnemosyneShimServer({
+      port: Number(process.env.MNEMOSYNE_PORT || 18010),
+      dbPath: process.env.MNEMOSYNE_SQLITE_PATH || resolveDataPath('memory.sqlite'),
+    });
+    await mnemosyneShim.listen();
+  } catch (err) {
+    console.warn('[Mnemosyne] 本地记忆桩启动提示 (端口可能已被官方服务占用):', err.message);
+  }
+}
+const mnemosyneClient = new MnemosyneClient({
+  base: process.env.MNEMOSYNE_BASE_URL || 'http://127.0.0.1:18010',
+});
+
 const dashboard = new DashboardServer({
   state,
   host: '0.0.0.0',
   port: Number(process.env.BOT_DASHBOARD_PORT || 6190),
+  mnemosyne: mnemosyneClient,
+  createPairingCode: (ttlMs) => wechat?.pairingStore?.createCode(ttlMs) || null,
   setTestMode,
   sendNotificationTest: () => notifier.sendTest(),
   forceWechatRelogin: async () => {
@@ -315,6 +339,19 @@ updateSchedule();
 const scheduleTimer = setInterval(updateSchedule, 30_000);
 scheduleTimer.unref();
 
+function getLanIps() {
+  const nets = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        ips.push(net.address);
+      }
+    }
+  }
+  return ips;
+}
+
 async function main() {
   await dashboard.start();
   notifier.start();
@@ -323,6 +360,14 @@ async function main() {
   // 仅保留 supervisor 实例用于 /api/status 状态展示，不 bootstrap/spawn。
   await wechat.start();
   onebot.start();
+
+  const lanIps = getLanIps();
+  const dashPort = process.env.BOT_DASHBOARD_PORT || 6190;
+  console.log(`[Dashboard] Web控制台已启动: http://127.0.0.1:${dashPort}`);
+  if (lanIps.length) {
+    console.log(`[Dashboard] 局域网访问地址: http://${lanIps[0]}:${dashPort}`);
+    console.log(`[Android] 平板配对接入地址: ws://${lanIps[0]}:6191/android`);
+  }
 }
 
 let shuttingDown = false;
@@ -339,6 +384,9 @@ function shutdown(signal, exitCode = 0) {
   wechat.shutdown();
   dashboard.stop();
   idMap.close();
+  if (mnemosyneShim) {
+    mnemosyneShim.close().catch(() => {});
+  }
   const exitTimer = setTimeout(() => process.exit(exitCode), 1_000);
 }
 

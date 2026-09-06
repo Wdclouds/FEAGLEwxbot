@@ -6,9 +6,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
+import { resolveDataPath } from './paths.js';
 import * as Lark from '@larksuiteoapi/node-sdk';
 
-const DEFAULT_BINDING_PATH = '/app/data/feishu/binding.json';
+const DEFAULT_BINDING_PATH = resolveDataPath('feishu/binding.json');
 const MAX_SEEN_MESSAGES = 100;
 
 export function loadFeishuBinding(path = DEFAULT_BINDING_PATH) {

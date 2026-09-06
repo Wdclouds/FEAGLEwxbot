@@ -19,6 +19,8 @@ __pycache__/
 *.py[cod]
 coverage/
 dist/
+target/
+apps/desktop/src-tauri/target/
 apps/android-agent/.gradle/
 apps/android-agent/**/build/
 apps/android-agent/local.properties

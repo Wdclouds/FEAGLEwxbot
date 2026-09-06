@@ -2,10 +2,25 @@ import { createReadStream, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import { subscribeLogs, tailLogs } from './terminal-log.js';
 import { MnemosyneClient } from './mnemosyne-client.js';
 import * as convSkills from './conv-skills.js';
 import QRCode from 'qrcode';
+import { runSystemDiagnosis } from './doctor.js';
+
+function getAvailableLanIps() {
+  const nets = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        ips.push(net.address);
+      }
+    }
+  }
+  return ips;
+}
 
 const DEFAULT_PUBLIC_ROOT = fileURLToPath(new URL('./public/', import.meta.url));
 
@@ -49,11 +64,13 @@ export class DashboardServer {
     saveBridgeSettings = async () => ({}),
     switchTransport = async () => ({}),
     getProbeRouter = () => null,
+    createPairingCode = null,
     publicRoot = DEFAULT_PUBLIC_ROOT,
   }) {
     this.state = state;
     this.host = host;
     this.port = port;
+    this.createPairingCode = createPairingCode;
     this.setTestMode = setTestMode;
     this.sendNotificationTest = sendNotificationTest;
     this.forceWechatRelogin = forceWechatRelogin;
@@ -97,6 +114,16 @@ export class DashboardServer {
 
   async handle(request, response) {
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+
+    // 支持 WebView2 / 本地跨源请求
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-FEAGLE-Dashboard, Origin, Accept');
+    if (request.method === 'OPTIONS') {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
 
     if (url.pathname === '/api/contacts/refresh') {
       if (request.method !== 'POST') {
@@ -603,17 +630,47 @@ export class DashboardServer {
     // ---- GET /api/device/pair-code (扫码免密配对二维码生成) ----
     if (url.pathname === '/api/device/pair-code') {
       const host = request.headers['x-forwarded-host'] || request.headers.host || `${this.host}:${this.port}`;
-      const hostname = String(host).split(':')[0];
+      let hostname = String(host).split(':')[0];
+      const lanIps = getAvailableLanIps();
+      const requestedIp = url.searchParams.get('ip');
+
+      if (requestedIp && lanIps.includes(requestedIp)) {
+        hostname = requestedIp;
+      } else if (['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(hostname.toLowerCase())) {
+        hostname = lanIps[0] || '127.0.0.1';
+      }
+
       const wsPort = process.env.ANDROID_WS_HOST_PORT || process.env.ANDROID_WS_PORT || '6191';
       const wsPath = process.env.ANDROID_WS_PATH || '/android';
       const proto = request.headers['x-forwarded-proto'] === 'https' ? 'wss' : 'ws';
-      const endpoint = `${proto}://${hostname}:${wsPort}${wsPath}`;
-      const token = process.env.ANDROID_BRIDGE_TOKEN || '';
+
+      let token = process.env.ANDROID_BRIDGE_TOKEN || '';
+      let pairingCode = null;
+      let expiresAt = null;
+
+      if (token.length < 24 && typeof this.createPairingCode === 'function') {
+        try {
+          const pair = this.createPairingCode();
+          if (pair?.code) {
+            pairingCode = pair.code;
+            expiresAt = pair.expiresAt;
+          }
+        } catch (err) {
+          console.warn('[Dashboard] createPairingCode notice:', err.message);
+        }
+      }
+
+      const endpoint = pairingCode
+        ? `${proto}://${hostname}:${wsPort}${wsPath}?mode=pair`
+        : `${proto}://${hostname}:${wsPort}${wsPath}`;
+
       const payload = {
         endpoint,
-        token,
+        ...(token ? { token } : {}),
+        ...(pairingCode ? { pairingCode, expiresAt } : {}),
         timestamp: Math.floor(Date.now() / 1000),
       };
+
       const rawPayload = JSON.stringify(payload);
       QRCode.toDataURL(rawPayload, { errorCorrectionLevel: 'M', margin: 2, width: 280 }, (err, qrDataUrl) => {
         response.writeHead(200, {
@@ -622,6 +679,10 @@ export class DashboardServer {
         });
         response.end(JSON.stringify({
           endpoint,
+          selectedIp: hostname,
+          lanIps,
+          pairingCode,
+          expiresAt,
           timestamp: payload.timestamp,
           qrDataUrl: err ? '' : qrDataUrl,
           deviceStatus: this.state.snapshot().android?.deviceStatus || 'DISCONNECTED',
@@ -690,6 +751,25 @@ export class DashboardServer {
         'Cache-Control': 'no-store',
       });
       response.end(JSON.stringify(this.state.snapshot()));
+      return;
+    }
+
+    // ---- GET /api/doctor (全系统与双大脑主动健康诊断) ----
+    if (url.pathname === '/api/doctor') {
+      try {
+        const report = await runSystemDiagnosis({ state: this.state });
+        response.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        response.end(JSON.stringify(report));
+      } catch (err) {
+        response.writeHead(500, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        response.end(JSON.stringify({ error: err?.message || String(err) }));
+      }
       return;
     }
 

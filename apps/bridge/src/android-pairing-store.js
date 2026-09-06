@@ -7,6 +7,7 @@ import {
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { resolveDataPath } from './paths.js';
 
 const DEFAULT_TTL_MS = 5 * 60_000;
 
@@ -19,7 +20,7 @@ function validDeviceId(value) {
 
 export class AndroidPairingStore {
   constructor({
-    path = '/app/data/android/pairing.sqlite',
+    path = resolveDataPath('android/pairing.sqlite'),
     secret,
     now = () => Date.now(),
     randomCode = () => randomInt(0, 100_000_000),

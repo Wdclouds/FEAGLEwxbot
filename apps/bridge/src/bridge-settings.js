@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
+import { resolveDataPath } from './paths.js';
 import { parseQuietHours } from './quiet-hours.js';
 
 export const TRANSPORTS = Object.freeze(['wechat4u', 'android']);
@@ -103,7 +104,7 @@ export function normalizeBridgeSettings(input, defaults = settingsDefaults()) {
 
 export class BridgeSettingsStore {
   constructor({
-    path = process.env.BRIDGE_SETTINGS_PATH || '/app/data/bridge-settings.json',
+    path = process.env.BRIDGE_SETTINGS_PATH || resolveDataPath('bridge-settings.json'),
     defaults = settingsDefaults(),
   } = {}) {
     this.path = path;

@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
+import { resolveDataPath } from './paths.js';
 import {
   GROUP_CHAT_MODES,
   normalizeGroupAllowlist,
@@ -43,7 +44,7 @@ export function normalizeSelfAvatar(value) {
 
 export class PersistentControlState {
   constructor({
-    path = '/app/data/control-state.json',
+    path = process.env.BOT_CONTROL_STATE_PATH || resolveDataPath('control-state.json'),
     now = () => Date.now(),
   } = {}) {
     this.path = path;
