@@ -23,15 +23,9 @@ public final class OtaUpdater {
         void onResult(boolean success, String message);
     }
 
-    public static void checkAndApplyUpdate(Context context, String wsEndpoint, Callback callback) {
+    public static void checkAndApplyUpdate(Context context, String wsEndpoint, JSONObject otaMeta, Callback callback) {
         new Thread(() -> {
             try {
-                URI uri = URI.create(wsEndpoint);
-                String httpScheme = "wss".equalsIgnoreCase(uri.getScheme()) ? "https" : "http";
-                String host = uri.getHost();
-                int port = uri.getPort();
-                String baseHttp = httpScheme + "://" + host + (port > 0 ? ":" + port : "");
-
                 String currentVersion = "0.0.0";
                 try {
                     currentVersion = context.getPackageManager()
@@ -39,41 +33,63 @@ public final class OtaUpdater {
                 } catch (Exception ignored) {
                 }
 
-                // 1. 检查更新
-                URL checkUrl = new URL(baseHttp + "/api/device/check-update?version=" + currentVersion);
-                HttpURLConnection conn = (HttpURLConnection) checkUrl.openConnection();
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(8000);
-                conn.setRequestMethod("GET");
-                if (conn.getResponseCode() != 200) {
-                    if (callback != null) callback.onResult(false, "Check update HTTP " + conn.getResponseCode());
-                    return;
+                String latestVer = "";
+                String downloadUrlStr = "";
+
+                if (otaMeta != null && otaMeta.has("latestVersion") && otaMeta.has("downloadUrl")) {
+                    latestVer = otaMeta.optString("latestVersion", "");
+                    downloadUrlStr = otaMeta.optString("downloadUrl", "");
+                    if (currentVersion.equals(latestVer)) {
+                        Log.i(TAG, "Already up-to-date via hello_ack: " + currentVersion);
+                        if (callback != null) callback.onResult(true, "Already up-to-date (" + currentVersion + ")");
+                        return;
+                    }
+                    Log.i(TAG, "OTA update available via hello_ack: " + currentVersion + " -> " + latestVer);
+                } else {
+                    URI uri = URI.create(wsEndpoint);
+                    String httpScheme = "wss".equalsIgnoreCase(uri.getScheme()) ? "https" : "http";
+                    String host = uri.getHost();
+                    int port = uri.getPort();
+                    String baseHttp = httpScheme + "://" + host + (port > 0 ? ":" + port : "");
+
+                    // 1. 检查更新
+                    URL checkUrl = new URL(baseHttp + "/api/device/check-update?version=" + currentVersion);
+                    HttpURLConnection conn = (HttpURLConnection) checkUrl.openConnection();
+                    conn.setConnectTimeout(8000);
+                    conn.setReadTimeout(8000);
+                    conn.setRequestMethod("GET");
+                    if (conn.getResponseCode() != 200) {
+                        if (callback != null) callback.onResult(false, "Check update HTTP " + conn.getResponseCode());
+                        return;
+                    }
+
+                    InputStream is = conn.getInputStream();
+                    byte[] buf = new byte[4096];
+                    int n;
+                    StringBuilder sb = new StringBuilder();
+                    while ((n = is.read(buf)) > 0) {
+                        sb.append(new String(buf, 0, n));
+                    }
+                    is.close();
+
+                    JSONObject res = new JSONObject(sb.toString());
+                    boolean hasUpdate = res.optBoolean("hasUpdate", false);
+                    latestVer = res.optString("latestVersion", "");
+                    String downloadRel = res.optString("downloadUrl", "/api/device/download-agent");
+
+                    if (!hasUpdate) {
+                        Log.i(TAG, "Already up-to-date: " + currentVersion);
+                        if (callback != null) callback.onResult(true, "Already up-to-date (" + currentVersion + ")");
+                        return;
+                    }
+
+                    downloadUrlStr = downloadRel.startsWith("http") ? downloadRel : (baseHttp + downloadRel);
                 }
 
-                InputStream is = conn.getInputStream();
-                byte[] buf = new byte[4096];
-                int n;
-                StringBuilder sb = new StringBuilder();
-                while ((n = is.read(buf)) > 0) {
-                    sb.append(new String(buf, 0, n));
-                }
-                is.close();
-
-                JSONObject res = new JSONObject(sb.toString());
-                boolean hasUpdate = res.optBoolean("hasUpdate", false);
-                String latestVer = res.optString("latestVersion", "");
-                String downloadRel = res.optString("downloadUrl", "/api/device/download-agent");
-
-                if (!hasUpdate) {
-                    Log.i(TAG, "Already up-to-date: " + currentVersion);
-                    if (callback != null) callback.onResult(true, "Already up-to-date (" + currentVersion + ")");
-                    return;
-                }
-
-                Log.i(TAG, "New version found: " + latestVer + ", downloading from " + downloadRel);
+                Log.i(TAG, "New version found: " + latestVer + ", downloading from " + downloadUrlStr);
 
                 // 2. 下载 APK 到 /data/local/tmp
-                URL downloadUrl = new URL(baseHttp + downloadRel);
+                URL downloadUrl = new URL(downloadUrlStr);
                 HttpURLConnection dlConn = (HttpURLConnection) downloadUrl.openConnection();
                 dlConn.setConnectTimeout(15000);
                 dlConn.setReadTimeout(30000);

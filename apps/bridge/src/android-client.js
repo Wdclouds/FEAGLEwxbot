@@ -337,6 +337,7 @@ export class AndroidWechatClient {
       pairingOnly: request?.feagleAuth?.pairingOnly === true,
       authenticatedDeviceId: String(request?.feagleAuth?.deviceId || ''),
       remoteAddress: String(request?.socket?.remoteAddress || 'unknown'),
+      hostHeader: String(request?.headers?.host || ''),
       pairingTimer: null,
     };
     if (socket.feagle.pairingOnly) {
@@ -462,10 +463,19 @@ export class AndroidWechatClient {
       'Android WeChat',
     );
     this.markHealthy(socket);
+    const hostPart = socket.feagle?.hostHeader
+      ? socket.feagle.hostHeader.split(':')[0]
+      : (socket.localAddress?.includes(':') ? '127.0.0.1' : (socket.localAddress || '127.0.0.1'));
+    const dashPort = process.env.BOT_DASHBOARD_PORT || 6190;
     this.send(socket, {
       type: 'hello_ack',
       accepted: true,
       heartbeatTimeoutMs: this.heartbeatTimeoutMs,
+      ota: {
+        latestVersion: '0.7.0',
+        downloadUrl: `http://${hostPart}:${dashPort}/api/device/download-agent`,
+        checkUrl: `http://${hostPart}:${dashPort}/api/device/check-update`,
+      },
     });
     // Android Agent 完成认证并建立连接后执行一次静默联系人同步
     this.scheduleInitialContactsSync();

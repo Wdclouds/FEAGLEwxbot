@@ -480,7 +480,8 @@ public final class BridgeForegroundService extends Service {
             }
             if ("pong".equals(type)) return;
             if ("hello_ack".equals(type)) {
-                triggerOtaCheck();
+                JSONObject otaMeta = message.optJSONObject("ota");
+                triggerOtaCheck(otaMeta);
                 return;
             }
             if ("event_ack".equals(type)) {
@@ -503,10 +504,10 @@ public final class BridgeForegroundService extends Service {
         }
     }
 
-    private void triggerOtaCheck() {
+    private void triggerOtaCheck(JSONObject otaMeta) {
         String endpoint = prefs.getString(AgentProtocol.KEY_ENDPOINT, "").trim();
         if (endpoint.isEmpty()) return;
-        OtaUpdater.checkAndApplyUpdate(this, endpoint, (success, msg) -> {
+        OtaUpdater.checkAndApplyUpdate(this, endpoint, otaMeta, (success, msg) -> {
             Log.i(TAG, "OTA result: " + success + ", " + msg);
         });
     }
