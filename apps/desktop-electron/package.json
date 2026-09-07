@@ -22,6 +22,10 @@
   ],
   "author": "FEAGLE Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Wdclouds/FEAGLEwxbot.git"
+  },
   "devDependencies": {
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8"

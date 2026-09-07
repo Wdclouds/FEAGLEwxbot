@@ -2,6 +2,8 @@ appId: com.feagle.wxbot.desktop
 productName: FEAGLE WxBot
 copyright: Copyright © 2026 FEAGLE Team
 
+publish: null
+
 directories:
   output: ../../dist/desktop
 
