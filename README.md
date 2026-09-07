@@ -16,10 +16,10 @@
   - [2. 中枢路由层：WeChat Bridge 与安全风控护栏](#2-中枢路由层wechat-bridge-与安全风控护栏)
   - [3. 推理大脑层：Hermes 智能体 vs AstrBot 插件中枢](#3-推理大脑层hermes-智能体-vs-astrbot-插件中枢)
   - [4. 记忆子系统：Mnemosyne 本地化与 Node 22 原生 SQLite 垫片](#4-记忆子系统mnemosyne-本地化与-node-22-原生-sqlite-垫片)
-  - [5. 桌面宿主层：Tauri 绿色容器与 Win32 JobObject 进程守护](#5-桌面宿主层tauri-绿色容器与-win32-jobobject-进程守护)
+  - [5. Windows 本地编排层：纯终端透明交互向导与多服务进程守护](#5-windows-本地编排层纯终端透明交互向导与多服务进程守护)
 - [五、 数据流转全生命周期](#五-数据流转全生命周期)
 - [六、 快速启动与运维指南](#六-快速启动与运维指南)
-  - [Windows 本地绿色运行](#windows-本地绿色运行)
+  - [Windows 本地绿色运行与交互式部署向导](#windows-本地绿色运行与交互式部署向导)
   - [Linux 极速自动化部署](#linux-极速自动化部署)
   - [系统大夫 (System Doctor) 一键诊断](#系统大夫-system-doctor-一键诊断)
 - [七、 常见问题与排障指南 (FAQ)](#七-常见问题与排障指南-faq)
@@ -87,13 +87,13 @@
 │  - 单文件持久化: ./data/mnemosyne.db            │
 └─────────────────────────────────────────────────┘
                         ▲
-                        │ (Windows 原生守护进程)
+                        │ (Windows 本地多服务编排器)
 ┌───────────────────────┴──────────────────────────────────────────────────────────────────────────┐
-│                              【桌面宿主层：Tauri Native Desktop Host】                            │
-│  - Rust + WebView2 原生无黑框守护 (`windows_subsystem = "windows"` + `CREATE_NO_WINDOW`)          │
-│  - Win32 JobObject 进程树生命周期绑定 (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, 绝无孤儿进程)       │
-│  - 宿主原生 TCP Socket 探测 (旁路避开 WebView2 Mixed Content / 私有网络跨源限制)                  │
-│  - 系统托盘驻留、后台静默常驻与一键错误日志复制导出                                                │
+│                   【Windows 本地编排层：纯终端交互向导与多服务进程守护】                         │
+│  - 纯终端色彩交互向导 (`setup-windows.bat` / `setup-wizard.js`)，透明可控，告别黑盒 GUI            │
+│  - 1 秒网络测速自动判断国内环境并自动应用 npmmirror / Aliyun PyPI / ghfast.top 镜像加速         │
+│  - 记忆系统 100% 绿色化（纯 Node 22 原生 node:sqlite 单文件，零 Docker / 零 PostgreSQL）          │
+│  - 根目录快捷批处理 (`start-windows.bat` / `feagle-doctor.bat` / `feagle.cmd start`) 一键托管     │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -195,29 +195,15 @@ Bridge（位于 `apps/bridge`）是整个生态的“主板中枢”，具备工
 
 ---
 
-### 5. 桌面宿主层：Tauri 绿色容器与 Win32 JobObject 进程守护
+### 5. Windows 本地编排层：纯终端透明交互向导与多服务进程守护
 
-在 Windows 桌面端（`apps/desktop/src-tauri`），项目通过 Rust 与底层 Win32 API 实现了工业级客户端封装：
-
-#### (1) Win32 JobObject 内核级生命周期绑定（防孤儿进程）
-在 Windows 上，普通的父子进程容易因崩溃或任务管理器结束而遗留大量后台孤儿 `node.exe` 进程。FEAGLE 桌面客户端在启动时通过 Windows API 初始化内核作业对象：
-```rust
-// 启用关闭作业时杀死进程树机制
-info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-SetInformationJobObject(job, JobObjectExtendedLimitInformation, ...);
-AssignProcessToJobObject(job, child_process_handle);
-```
-**效果**：无论通过界面右上角退出、任务管理器强行 End Process、还是系统突然注销，操作系统内核层会瞬间连带销毁 Bridge 及其派生的所有子进程，**保证 0 后台孤儿进程残留**。
-
-#### (2) 彻底消除黑控制台弹窗
-- Rust 宿主编译配置 `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`；
-- 创建子进程时注入 Win32 创建标志 `CREATE_NO_WINDOW = 0x08000000`；
-- 所有 Node.js 的 stdout/stderr 通过 Rust 内部 `BufReader` 流式管道接管，存入内存环形日志队列，**全过程无任何黑色 CMD/PowerShell 窗口闪烁**。
-
-#### (3) 绕过 WebView2 混合内容（Mixed Content）限制
-现代 Chromium（Edge 152+）限制从 `https://tauri.localhost` 向 `http://127.0.0.1` 发起子资源 `fetch`。FEAGLE 客户端采用了**原生 Socket 旁路探测**方案：
-- 由 Rust 原生 `TcpStream::connect_timeout` 在操作系统内核协议栈检测端口可用性；
-- 探测就绪后直接执行全局页面导航跳转，彻底规避浏览器安全沙盒的假死误报。
+为了兼顾 CLI 极客运维与小白开箱即用，系统采用**核心业务与宿主彻底解耦的架构**：
+- **纯终端交互向导 (`setup-windows.bat` / `setup-wizard.js`)**：透明可控，1 秒网络测速自动判断国内环境并应用镜像加速；
+- **一键启动本地全套服务 (`start-windows.bat` / `.\feagle.cmd start`)**：纯终端拉起 Bridge、目标大脑与记忆伴随；
+- **原生桌面端与 GitHub Releases 分发 (`apps/desktop-electron/` / `.\feagle.cmd desktop`)**：
+  - 基于 Electron 打造 Windows 独立窗口宿主，集成系统托盘驻留、后台免打扰静默运行与实时日志流监控；
+  - **核心解耦独立热更新**：通过 `extraResources` 将 Bridge 与 Mnemosyne Shim 外置抽离于 `resources/core/` 目录中。当核心代码迭代或修复 Bug 时，用户仅需下载 1~2MB 补丁覆盖即可热升级，**杜绝每次重新打包下载 80MB+ 笨重安装包**；
+  - **单实例与零孤儿进程**：应用具备单例互斥锁保护，托盘退出时递归清理全部子进程树，零后台残留。
 
 ---
 
@@ -255,17 +241,49 @@ AssignProcessToJobObject(job, child_process_handle);
 
 ## 六、 快速启动与运维指南
 
-### Windows 本地绿色运行
+### Windows 本地绿色运行与交互式部署向导
 
-1. **直接双击运行**：
-   双击桌面生成的 **`FEAGLE WxBot`** 快捷方式，客户端将静默拉起中枢服务并直达 Control Deck 管理台。
-2. **快捷管理脚本**：
-   在项目根目录下通过 PowerShell 运行管理工具：
+1. **首次部署与交互向导 (方案 1)**：
+   直接双击运行项目根目录下的 **`setup-windows.bat`** 或在终端执行：
    ```powershell
-   # 启动本地 Bridge 中枢
-   .\feagle.cmd bridge start
+   .\feagle.cmd setup
+   ```
+   - 自动检测 Node.js 22 (node:sqlite) 与 Python 运行环境；
+   - 1 秒极速网络探测，智能判定国内网络并提供镜像加速；
+   - 引导选择安装 **Hermes** 或 **AstrBot**，支持自定义安装目录；
+   - 若选择 Hermes，自动就绪基于原生 SQLite 的 18010 独立记忆伪装服务；
+   - 探测各核心端口并保存配置至 `.env`。
 
-   # 检查平板与微信 Hook 连接状态
+2. **桌面客户端运行与 GitHub Releases 打包 (`feagle.cmd desktop`)**：
+   - 检查桌面端就绪状态：
+     ```powershell
+     .\feagle.cmd desktop check
+     ```
+   - 启动桌面客户端本地开发调试：
+     ```powershell
+     .\feagle.cmd desktop dev
+     ```
+   - 打包生成 Windows 便携免安装版与安装程序（输出至 `dist/desktop/`）：
+     ```powershell
+     .\feagle.cmd desktop build
+     ```
+   - 托盘图标右键支持【打开控制台】、【在外部浏览器打开】、【查看实时运行日志】、【重启核心服务】与【彻底退出】。
+
+3. **一键启动纯终端命令行本地服务**：
+   双击运行项目根目录下的 **`start-windows.bat`** 或在终端执行：
+   ```powershell
+   .\feagle.cmd start
+   ```
+   - 编排拉起 WeChat Bridge (6190/6191)、目标大脑（AstrBot/Hermes）与 Mnemosyne 记忆伪装 (18010)；
+   - 自动在默认浏览器中打开控制台 `http://127.0.0.1:6190`；
+   - 终端中 `Ctrl + C` 即可优雅关闭全套进程树。
+
+3. **系统大夫与安卓诊断工具**：
+   ```powershell
+   # 快速系统健康诊断
+   .\feagle.cmd doctor
+
+   # 检查安卓平板 Hook 连接
    .\feagle.cmd android doctor
    ```
 

@@ -128,12 +128,14 @@ export function createMnemosyneShimServer({ dbPath = './data/memory.sqlite', por
         return;
       }
 
-      // 3. POST /api/v1/memories/search (语义/关键词检索)
-      if (req.method === 'POST' && pathname === '/api/v1/memories/search') {
-        const body = await parseJsonBody(req);
-        const userId = body.user_id || 'default';
-        const query = String(body.query || '').trim();
-        const limit = Math.min(Number(body.limit) || 10, 100);
+      // 3. POST /api/v1/memories/search (语义/关键词检索) 或 GET /api/v1/memories/search
+      if ((req.method === 'POST' || req.method === 'GET') && pathname === '/api/v1/memories/search') {
+        const body = req.method === 'POST' ? await parseJsonBody(req) : {};
+        const userId = body.user_id || url.searchParams.get('user_id') || 'default';
+        const query = String(body.query || url.searchParams.get('q') || url.searchParams.get('query') || '').trim();
+        const limit = Math.min(Number(body.limit || url.searchParams.get('limit')) || 10, 100);
+        const category = body.category || url.searchParams.get('category');
+        const owner = body.owner || url.searchParams.get('owner');
 
         let sql = 'SELECT * FROM memories WHERE user_id = ?';
         const params = [userId];
@@ -142,13 +144,13 @@ export function createMnemosyneShimServer({ dbPath = './data/memory.sqlite', por
           sql += ' AND content LIKE ?';
           params.push(`%${query}%`);
         }
-        if (body.category) {
+        if (category) {
           sql += ' AND category = ?';
-          params.push(body.category);
+          params.push(category);
         }
-        if (body.owner) {
+        if (owner) {
           sql += ' AND owner = ?';
-          params.push(body.owner);
+          params.push(owner);
         }
 
         sql += ' ORDER BY created_at DESC LIMIT ?';

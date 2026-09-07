@@ -17,7 +17,6 @@ import { GROUP_CHAT_MODES } from './group-chat.js';
 import { GroupSafetyGate } from './group-safety.js';
 import { BridgeSettingsStore } from './bridge-settings.js';
 import { resolveDataPath } from './paths.js';
-import { createMnemosyneShimServer } from './mnemosyne-shim.js';
 import { MnemosyneClient } from './mnemosyne-client.js';
 import os from 'node:os';
 
@@ -131,19 +130,7 @@ const feishuBinding = new FeishuBindingClient({
 });
 let wechat;
 
-// 自动探测并启动 Windows / 单机本地记忆桩（监听 18010 端口，使用 node:sqlite）
-let mnemosyneShim = null;
-if (process.env.MNEMOSYNE_LOCAL !== 'false') {
-  try {
-    mnemosyneShim = createMnemosyneShimServer({
-      port: Number(process.env.MNEMOSYNE_PORT || 18010),
-      dbPath: process.env.MNEMOSYNE_SQLITE_PATH || resolveDataPath('memory.sqlite'),
-    });
-    await mnemosyneShim.listen();
-  } catch (err) {
-    console.warn('[Mnemosyne] 本地记忆桩启动提示 (端口可能已被官方服务占用):', err.message);
-  }
-}
+// Mnemosyne 客户端（连接 18010 记忆服务，无论是官方 Docker 还是独立的 Windows 记忆伴随服务）
 const mnemosyneClient = new MnemosyneClient({
   base: process.env.MNEMOSYNE_BASE_URL || 'http://127.0.0.1:18010',
 });
@@ -384,9 +371,6 @@ function shutdown(signal, exitCode = 0) {
   wechat.shutdown();
   dashboard.stop();
   idMap.close();
-  if (mnemosyneShim) {
-    mnemosyneShim.close().catch(() => {});
-  }
   const exitTimer = setTimeout(() => process.exit(exitCode), 1_000);
 }
 

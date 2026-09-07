@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build & Publish Release Packages
+  build-linux-suite:
+    name: Build Linux Suite Package
     runs-on: ubuntu-latest
 
     steps:
@@ -24,12 +24,81 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Building release for version: ${VERSION}"
+          echo "Building Linux suite for version: ${VERSION}"
 
       - name: Package Linux Suite
         run: |
           chmod +x scripts/package-release.sh
           ./scripts/package-release.sh "${{ steps.get_version.outputs.VERSION }}"
+
+      - name: Upload Linux Suite Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-suite
+          path: dist/feagle-suite-linux-amd64-v${{ steps.get_version.outputs.VERSION }}.tar.gz
+
+  build-windows-desktop:
+    name: Build Windows Desktop App (Electron)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Bridge Dependencies
+        working-directory: ./apps/bridge
+        run: npm install --no-audit
+
+      - name: Install Electron Build Dependencies
+        working-directory: ./apps/desktop-electron
+        run: npm install --no-audit
+
+      - name: Build Windows Executables
+        working-directory: ./apps/desktop-electron
+        run: npm run build
+
+      - name: Upload Windows Desktop Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-desktop
+          path: dist/desktop/*.exe
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-linux-suite, build-windows-desktop]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Extract Tag Version
+        id: get_version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-suite
+          path: dist-release/
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-desktop
+          path: dist-release/
+
+      - name: List Artifacts to Publish
+        run: ls -la dist-release/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -38,5 +107,5 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            dist/feagle-suite-linux-amd64-v${{ steps.get_version.outputs.VERSION }}.tar.gz
+            dist-release/*
           generate_release_notes: true

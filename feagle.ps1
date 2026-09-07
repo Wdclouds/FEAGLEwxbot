@@ -17,6 +17,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 $projectRoot = $PSScriptRoot
 
 function Show-Usage {
@@ -24,21 +26,34 @@ function Show-Usage {
 FEAGLE WxBot Monorepo
 
 Usage / 用法:
-  .\feagle.cmd bridge start
-  .\feagle.cmd bridge status
-  .\feagle.cmd bridge exit
-  .\feagle.cmd android doctor
-  .\feagle.cmd android build-agent
-  .\feagle.cmd android agent-status
-  .\feagle.cmd env
-  .\feagle.cmd desktop check
-  .\feagle.cmd desktop build
-  .\feagle.cmd desktop run
-  .\feagle.cmd protocol check
+  .\feagle.cmd setup            Interactive terminal setup wizard / 终端交互式安装配置向导
+  .\feagle.cmd start            Start local service stack / 启动本地全套服务栈 (Bridge + 大脑 + 记忆)
+  .\feagle.cmd doctor           Run system health check / 运行系统体检大夫
+  .\feagle.cmd desktop check    Check desktop client status / 检查桌面客户端就绪状态
+  .\feagle.cmd desktop dev      Launch desktop client dev mode / 启动桌面客户端调试
+  .\feagle.cmd desktop build    Build Windows installer & portable exe / 构建安装包与便携版
+  .\feagle.cmd bridge start     Start the SSH tunnel / 启动 SSH 隧道模式
+  .\feagle.cmd bridge status    Check the managed tunnel / 检查隧道状态
+  .\feagle.cmd bridge exit      Stop the managed tunnel / 退出隧道
+  .\feagle.cmd android doctor   Diagnose Android tablet connection / 诊断安卓平板连接
+  .\feagle.cmd env              Check environment & runtimes / 检查运行环境
+  .\feagle.cmd protocol check   Verify OneBot v11 schema / 协议校验
 '@
 }
 
 switch ($Component.ToLowerInvariant()) {
+  'setup' {
+    & node (Join-Path $projectRoot 'tools\windows\setup-wizard.js') @RemainingArguments
+    exit $LASTEXITCODE
+  }
+  'start' {
+    & node (Join-Path $projectRoot 'tools\windows\start-local.js') @RemainingArguments
+    exit $LASTEXITCODE
+  }
+  'doctor' {
+    & node (Join-Path $projectRoot 'tools\windows\doctor.js') @RemainingArguments
+    exit $LASTEXITCODE
+  }
   'bridge' {
     & (Join-Path $projectRoot 'tools\windows-bridge\wxbot.ps1') `
       'bridge' @RemainingArguments

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FEAGLE WxBot 正在启动...</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #09090b;
+      color: #fafafa;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+    .container {
+      text-align: center;
+      max-width: 480px;
+      padding: 32px;
+    }
+    .logo-ring {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 24px;
+      border-radius: 50%;
+      border: 3px solid rgba(254, 192, 26, 0.2);
+      border-top-color: #fec01a;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    p.subtitle {
+      font-size: 13px;
+      color: #a1a1aa;
+      margin-bottom: 24px;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 9999px;
+      padding: 6px 16px;
+      font-size: 12px;
+      color: #e4e4e7;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      background: #fec01a;
+      border-radius: 50%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+    .log-preview {
+      margin-top: 24px;
+      font-size: 11px;
+      color: #71717a;
+      font-family: Consolas, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-ring"></div>
+    <h1>FEAGLE WxBot</h1>
+    <p class="subtitle">微信 AI 智能体生态中枢 · 正在唤醒本地核心服务</p>
+    <div class="status-pill">
+      <span class="dot"></span>
+      <span id="status-text">正在启动 WeChat Bridge 与本地记忆组件...</span>
+    </div>
+    <div class="log-preview" id="log-text">0 Docker / 0 PostgreSQL / 100% 绿色纯单机模式</div>
+  </div>
+</body>
+</html>

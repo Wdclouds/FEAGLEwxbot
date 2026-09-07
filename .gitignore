@@ -10,10 +10,15 @@ apps/bridge/data/
 apps/bridge/downloads/
 apps/bridge/tools/
 apps/bridge/AstrBot/
+deploy/hermes/
+deploy/astrbot/
+deploy/**/venv/
+deploy/**/.venv/
 
 # Dependencies and build output
 node_modules/
 apps/bridge/node_modules/
+apps/desktop-electron/node_modules/
 apps/bridge/.smoke-status.json
 __pycache__/
 *.py[cod]

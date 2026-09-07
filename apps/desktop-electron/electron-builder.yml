@@ -1,0 +1,54 @@
+appId: com.feagle.wxbot.desktop
+productName: FEAGLE WxBot
+copyright: Copyright © 2026 FEAGLE Team
+
+directories:
+  output: ../../dist/desktop
+  app: .
+
+files:
+  - package.json
+  - src/**/*
+  - assets/**/*
+
+# 关键解耦设计：通过 extraResources 将 Bridge 与 Mnemosyne Shim 抽取为外置资源
+# 这样发布后，核心源码直接位于 resources/core/ 下，支持通过覆盖 ZIP 微补丁独立热更新，
+# 绝不需要每次修改一行代码就重新打包下载 80MB 的 Electron 壳！
+extraResources:
+  - from: ../bridge
+    to: core/apps/bridge
+    filter:
+      - package.json
+      - src/**/*
+      - node_modules/**/*
+      - "!data/**/*"
+      - "!test/**/*"
+      - "!logs/**/*"
+  - from: ../../deploy/mnemosyne/windows-shim
+    to: core/deploy/mnemosyne/windows-shim
+    filter:
+      - server.js
+      - shim.js
+      - package.json
+
+win:
+  icon: assets/icon.ico
+  target:
+    - target: portable
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - x64
+
+portable:
+  artifactName: FEAGLE-WxBot-v${version}-Portable-x64.exe
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  artifactName: FEAGLE-WxBot-Setup-v${version}-x64.exe
+  shortcutName: FEAGLE WxBot
+  createDesktopShortcut: always
+  createStartMenuShortcut: true

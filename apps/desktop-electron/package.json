@@ -1,0 +1,29 @@
+{
+  "name": "feagle-desktop-electron",
+  "version": "0.5.0",
+  "description": "FEAGLE WxBot Native Windows Desktop Client with Decoupled Architecture",
+  "main": "src/main.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build:portable": "electron-builder --win portable --config electron-builder.yml",
+    "build:nsis": "electron-builder --win nsis --config electron-builder.yml",
+    "build": "electron-builder --win --config electron-builder.yml"
+  },
+  "keywords": [
+    "wechat",
+    "bot",
+    "onebot",
+    "electron",
+    "ai",
+    "feagle"
+  ],
+  "author": "FEAGLE Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  }
+}
