@@ -4,7 +4,6 @@ copyright: Copyright © 2026 FEAGLE Team
 
 directories:
   output: ../../dist/desktop
-  app: .
 
 files:
   - package.json
